@@ -1,0 +1,71 @@
+
+@import "tailwindcss";
+
+@page {
+    margin: 0;
+}
+
+@media print {
+    html,
+    body {
+        display: block !important;
+        position: static !important;
+        width: auto !important;
+        height: auto !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        background: white !important;
+    }
+
+    /* Hide the original React application and all other body children. */
+    body > *:not(#temporary-coordinator-print) {
+        display: none !important;
+    }
+
+    /* Print only the temporary cloned card. */
+    body > #temporary-coordinator-print {
+        display: block !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: auto !important;
+        bottom: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        transform: none !important;
+        break-before: avoid !important;
+        break-after: avoid !important;
+        page-break-before: avoid !important;
+        page-break-after: avoid !important;
+    }
+
+    #temporary-coordinator-print,
+    #temporary-coordinator-print * {
+        visibility: visible !important;
+        box-sizing: border-box !important;
+    }
+
+    #temporary-coordinator-print .coordinator-print-card,
+    #temporary-coordinator-print .card-artwork {
+        position: relative !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        max-width: none !important;
+        transform: none !important;
+        box-shadow: none !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+    }
+
+    #temporary-coordinator-print .card-artwork > div {
+        position: absolute !important;
+    }
+
+    #temporary-coordinator-print img {
+        print-color-adjust: exact !important;
+        -webkit-print-color-adjust: exact !important;
+    }
+}
