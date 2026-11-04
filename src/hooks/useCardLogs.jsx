@@ -96,10 +96,12 @@ export function useCardLogs(onMutation) {
 
         if (
             newQuantity.trim() === "" ||
-            !Number.isInteger(quantity) ||
-            quantity <= 0
+            !Number.isSafeInteger(quantity) ||
+            quantity === 0
         ) {
-            setError("أدخل كمية صحيحة أكبر من صفر.");
+            setError(
+                "أدخل رقماً صحيحاً، موجباً للإضافة أو سالباً للخصم، ولا يمكن أن يكون صفراً."
+            );
             return;
         }
 
@@ -111,22 +113,30 @@ export function useCardLogs(onMutation) {
             });
 
             setNewQuantity("");
-            setSuccess(data.message || "تمت إضافة كمية البطاقات بنجاح.");
+            setSuccess(
+                data.message ||
+                (quantity > 0
+                    ? "تمت إضافة كمية البطاقات بنجاح."
+                    : "تم خصم كمية البطاقات بنجاح.")
+            );
 
             await Promise.all([
                 refreshLogs(),
-                onMutation(),
+                onMutation?.(),
             ]);
         } catch (err) {
             console.error("Add card quantity error:", err);
-            setError(err.message || "حدث خطأ أثناء إضافة الكمية.");
+            setError(err.message || "حدث خطأ أثناء تعديل كمية البطاقات.");
         } finally {
             setSaving(false);
         }
     }
 
     async function handleDeleteLog(id) {
-        const confirmed = window.confirm("هل أنت متأكد من حذف سجل البطاقات?");
+        const confirmed = window.confirm(
+            "هل أنت متأكد من حذف سجل البطاقات؟"
+        );
+
         if (!confirmed) return;
 
         setError("");
@@ -135,10 +145,12 @@ export function useCardLogs(onMutation) {
 
         try {
             const data = await sendHttpReq(`card-logs/${id}`, "DELETE");
+
             setSuccess(data.message || "تم حذف السجل بنجاح.");
+
             await Promise.all([
                 refreshLogs(),
-                onMutation(),
+                onMutation?.(),
             ]);
         } catch (err) {
             console.error("Delete card log error:", err);
