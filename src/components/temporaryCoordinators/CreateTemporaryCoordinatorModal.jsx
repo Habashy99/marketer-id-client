@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import SearchableSelect from "../SearchableSelect";
+
 const INITIAL_FORM = {
     name: "",
     mother_company: "",
@@ -8,6 +9,14 @@ const INITIAL_FORM = {
     branch: "",
     from_date: "",
     to_date: "",
+    notes: "",
+};
+
+const getDateValue = (value) => {
+    if (!value) return "";
+
+    // Handles SQL date strings and ISO datetime strings.
+    return String(value).slice(0, 10);
 };
 
 export default function CreateTemporaryCoordinatorModal({
@@ -16,16 +25,39 @@ export default function CreateTemporaryCoordinatorModal({
     onSubmit,
     companies,
     saving,
+    initialData = null,
+    mode = "create",
 }) {
     const [form, setForm] = useState(INITIAL_FORM);
     const [error, setError] = useState("");
 
+    const isEditing = mode === "edit" || Boolean(initialData);
+
     useEffect(() => {
-        if (open) {
+        if (!open) return;
+
+        if (initialData) {
+            setForm({
+                name: initialData.name ?? "",
+                mother_company: String(
+                    initialData.mother_company ?? ""
+                ),
+                advertising_company_id: String(
+                    initialData.advertising_company_id ?? ""
+                ),
+                national_id_number:
+                    initialData.national_id_number ?? "",
+                branch: String(initialData.branch ?? ""),
+                from_date: getDateValue(initialData.from_date),
+                to_date: getDateValue(initialData.to_date),
+                notes: initialData.notes ?? "",
+            });
+        } else {
             setForm(INITIAL_FORM);
-            setError("");
         }
-    }, [open]);
+
+        setError("");
+    }, [open, initialData]);
 
     if (!open) return null;
 
@@ -49,15 +81,26 @@ export default function CreateTemporaryCoordinatorModal({
             await onSubmit({
                 ...form,
                 name: form.name.trim(),
-                mother_company: String(form.mother_company).trim(),
-                national_id_number: form.national_id_number.trim(),
+                mother_company: String(
+                    form.mother_company
+                ).trim(),
+                national_id_number:
+                    form.national_id_number.trim(),
                 branch: String(form.branch).trim(),
-                advertising_company_id: Number(form.advertising_company_id),
+                advertising_company_id: Number(
+                    form.advertising_company_id
+                ),
+                notes: form.notes.trim(),
             });
 
             setForm(INITIAL_FORM);
         } catch (err) {
-            setError(err.message || "فشل إضافة المنسق المؤقت.");
+            setError(
+                err.message ||
+                    (isEditing
+                        ? "فشل تعديل المنسق المؤقت."
+                        : "فشل إضافة المنسق المؤقت.")
+            );
         }
     };
 
@@ -74,7 +117,9 @@ export default function CreateTemporaryCoordinatorModal({
             >
                 <div className="mb-6 flex items-center justify-between">
                     <h2 className="text-xl font-bold text-orange-600">
-                        إضافة منسق مؤقت
+                        {isEditing
+                            ? "تعديل منسق مؤقت"
+                            : "إضافة منسق مؤقت"}
                     </h2>
 
                     <button
@@ -92,6 +137,7 @@ export default function CreateTemporaryCoordinatorModal({
                         <label className="mb-1 block text-sm font-semibold">
                             الاسم
                         </label>
+
                         <input
                             type="text"
                             required
@@ -112,7 +158,9 @@ export default function CreateTemporaryCoordinatorModal({
                         <SearchableSelect
                             endpoint="retail/suppliers/search"
                             value={form.mother_company}
-                            onChange={(value) => updateField("mother_company", value)}
+                            onChange={(value) =>
+                                updateField("mother_company", value)
+                            }
                             placeholder="ابحث عن الشركة الأم..."
                             isClearable
                         />
@@ -131,7 +179,10 @@ export default function CreateTemporaryCoordinatorModal({
                             }))}
                             value={form.advertising_company_id}
                             onChange={(value) =>
-                                updateField("advertising_company_id", value)
+                                updateField(
+                                    "advertising_company_id",
+                                    value
+                                )
                             }
                             placeholder="ابحث عن الشركة الإعلانية..."
                             isDisabled={companies.length === 0}
@@ -144,6 +195,7 @@ export default function CreateTemporaryCoordinatorModal({
                         <label className="mb-1 block text-sm font-semibold">
                             الرقم القومي
                         </label>
+
                         <input
                             type="text"
                             required
@@ -168,7 +220,9 @@ export default function CreateTemporaryCoordinatorModal({
                         <SearchableSelect
                             endpoint="retail/branches/search"
                             value={form.branch}
-                            onChange={(value) => updateField("branch", value)}
+                            onChange={(value) =>
+                                updateField("branch", value)
+                            }
                             placeholder="ابحث عن الفرع..."
                             isClearable
                         />
@@ -179,6 +233,7 @@ export default function CreateTemporaryCoordinatorModal({
                         <label className="mb-1 block text-sm font-semibold">
                             من تاريخ
                         </label>
+
                         <input
                             type="date"
                             required
@@ -195,6 +250,7 @@ export default function CreateTemporaryCoordinatorModal({
                         <label className="mb-1 block text-sm font-semibold">
                             إلى تاريخ
                         </label>
+
                         <input
                             type="date"
                             required
@@ -202,6 +258,22 @@ export default function CreateTemporaryCoordinatorModal({
                             value={form.to_date}
                             onChange={(e) =>
                                 updateField("to_date", e.target.value)
+                            }
+                            className="w-full rounded-lg border border-gray-300 p-2.5"
+                        />
+                    </div>
+
+                    {/* Notes */}
+                    <div className="sm:col-span-2">
+                        <label className="mb-1 block text-sm font-semibold">
+                            الملاحظات
+                        </label>
+
+                        <textarea
+                            rows={3}
+                            value={form.notes}
+                            onChange={(e) =>
+                                updateField("notes", e.target.value)
                             }
                             className="w-full rounded-lg border border-gray-300 p-2.5"
                         />
@@ -220,7 +292,11 @@ export default function CreateTemporaryCoordinatorModal({
                         disabled={saving || companies.length === 0}
                         className="rounded-lg bg-orange-600 px-5 py-2.5 font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                        {saving ? "جاري الحفظ..." : "حفظ المنسق"}
+                        {saving
+                            ? "جاري الحفظ..."
+                            : isEditing
+                              ? "حفظ التعديلات"
+                              : "حفظ المنسق"}
                     </button>
 
                     <button
