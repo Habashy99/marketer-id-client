@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useState } from "react";
 import { sendHttpReq } from "../lib/httpHandler";
 
@@ -13,11 +12,11 @@ export function useCardTotals() {
         try {
             const [inventoryData, printedData] = await Promise.all([
                 sendHttpReq("card-logs/total"),
-                sendHttpReq("printLog/total-printed-cards"),
+                sendHttpReq("card-logs/totalDisbursed"),
             ]);
 
             setTotalInventory(Number(inventoryData.totalQuantity) || 0);
-            setTotalSpent(Number(printedData.totalPrintedCards) || 0);
+            setTotalSpent(Number(printedData.totalQuantity) || 0);
         } catch (err) {
             console.error("Fetch card totals error:", err);
             throw err;
