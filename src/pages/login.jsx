@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/header";
 import { useAuth } from "../context/authContext";
@@ -12,11 +12,13 @@ function Login() {
     const [loading, setLoading] = useState(false);
 
     const navigate = useNavigate();
-    const { user, loginUser } = useAuth();
+const { user, loginUser, isAuthLoading } = useAuth();
 
-    if (user) {
-        navigate("/", { replace: true });
-    }
+    useEffect(() => {
+        if (!isAuthLoading && user) {
+            navigate("/", { replace: true });
+        }
+    }, [user, isAuthLoading, navigate]);
 
 
     const handleLogin = async (e) => {
@@ -45,7 +47,13 @@ function Login() {
         }
     };
 
+    if (isAuthLoading) {
+        return <div>جاري التحقق من تسجيل الدخول...</div>;
+    }
 
+    if (user) {
+        return null;
+    }
     return (
         <div className="min-h-screen">
             <div className="sticky top-0 z-50">
