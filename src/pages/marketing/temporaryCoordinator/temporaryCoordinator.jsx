@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import Header from "../../../components/header";
 import CreateTemporaryCoordinatorModal from "../../../components/temporaryCoordinators/CreateTemporaryCoordinatorModal";
-
+import { hasPermission } from "../../../helpers/permissions";
 import { sendHttpReq } from "../../../lib/httpHandler";
 import { useAuth } from "../../../context/authContext";
 
@@ -16,9 +16,11 @@ function TemporaryCoordinators() {
     // ADMIN PERMISSIONS
     // ==========================================
 
-    // Admin has full access to this page.
-    const canCreateTemporaryCoordinator = true;
-    const canCreateAdvertisingCompany = true;
+    const canViewTemporaryCoordinators = hasPermission(user, 30);
+    const canCreateTemporaryCoordinator = hasPermission(user, 28);
+    const canCreateAdvertisingCompany = hasPermission(user, 29);
+    const canDeleteTemporaryCoordinator = hasPermission(user, 31);
+    const canEditTemporaryCoordinator = hasPermission(user, 32);
 
     // ==========================================
     // DATA
@@ -62,11 +64,15 @@ function TemporaryCoordinators() {
     const [companyModalOpen, setCompanyModalOpen] = useState(false);
     const [newCompanyName, setNewCompanyName] = useState("");
 
+    const [editingCoordinator, setEditingCoordinator] = useState(null);
+
     // ==========================================
     // FETCH TEMPORARY COORDINATORS
     // ==========================================
 
     const fetchCoordinators = useCallback(async () => {
+        if (!canViewTemporaryCoordinators) return;
+
         setLoading(true);
         setError("");
 
@@ -77,19 +83,14 @@ function TemporaryCoordinators() {
                 throw new Error("لم يتم استلام بيانات من السيرفر.");
             }
 
-            setCoordinators(
-                response.coordinators ?? response.records ?? []
-            );
+            setCoordinators(response.coordinators ?? response.records ?? []);
         } catch (err) {
             console.error("Fetch temporary coordinators:", err);
-
-            setError(
-                err.message || "فشل تحميل بيانات المنسقين المؤقتين."
-            );
+            setError(err.message || "فشل تحميل بيانات المنسقين المؤقتين.");
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [canViewTemporaryCoordinators]);
 
     // ==========================================
     // FETCH ADVERTISING COMPANIES
@@ -109,10 +110,7 @@ function TemporaryCoordinators() {
             setCompanies(response.companies ?? []);
         } catch (err) {
             console.error("Fetch advertising companies:", err);
-
-            setCompaniesError(
-                err.message || "فشل تحميل الشركات الإعلانية."
-            );
+            setCompaniesError(err.message || "فشل تحميل الشركات الإعلانية.");
         } finally {
             setCompaniesLoading(false);
         }
@@ -174,16 +172,68 @@ function TemporaryCoordinators() {
     useEffect(() => {
         if (!user) return;
 
-        fetchCoordinators();
-        fetchCompanies();
-    }, [user, fetchCoordinators, fetchCompanies]);
+        if (canViewTemporaryCoordinators) {
+            fetchCoordinators();
+        }
+
+        if (
+            canCreateTemporaryCoordinator ||
+            canCreateAdvertisingCompany
+        ) {
+            fetchCompanies();
+        }
+    }, [
+        user,
+        canViewTemporaryCoordinators,
+        canCreateTemporaryCoordinator,
+        canCreateAdvertisingCompany,
+        fetchCoordinators,
+        fetchCompanies,
+    ]);
 
     // ==========================================
-    // CREATE TEMPORARY COORDINATOR
+    // OPEN CREATE MODAL
     // ==========================================
 
-    const handleCreate = async (data) => {
-        if (!canCreateTemporaryCoordinator) {
+    const openCreateModal = () => {
+        if (!canCreateTemporaryCoordinator) return;
+
+        setEditingCoordinator(null);
+        setModalOpen(true);
+    };
+
+    // ==========================================
+    // OPEN EDIT MODAL
+    // ==========================================
+
+    const openEditModal = (coordinator) => {
+        if (!canEditTemporaryCoordinator) return;
+
+        setEditingCoordinator(coordinator);
+        setModalOpen(true);
+    };
+
+    // ==========================================
+    // CLOSE COORDINATOR MODAL
+    // ==========================================
+
+    const closeCoordinatorModal = () => {
+        setModalOpen(false);
+        setEditingCoordinator(null);
+    };
+
+    // ==========================================
+    // CREATE / UPDATE TEMPORARY COORDINATOR
+    // ==========================================
+
+    const handleSave = async (data) => {
+        const isEditing = Boolean(editingCoordinator);
+
+        if (isEditing && !canEditTemporaryCoordinator) {
+            throw new Error("ليس لديك صلاحية تعديل الاستثناء.");
+        }
+
+        if (!isEditing && !canCreateTemporaryCoordinator) {
             throw new Error("ليس لديك صلاحية إنشاء مناديب مؤقتة.");
         }
 
@@ -191,28 +241,51 @@ function TemporaryCoordinators() {
 
         try {
             const response = await sendHttpReq(
-                "temporary-coordinators",
-                "POST",
+                isEditing
+                    ? `temporary-coordinators/${editingCoordinator.id}`
+                    : "temporary-coordinators",
+                isEditing ? "PUT" : "POST",
                 data
             );
 
             if (!response?.coordinator) {
                 throw new Error(
-                    response?.message || "فشل إضافة المنسق المؤقت."
+                    response?.message ||
+                    (isEditing
+                        ? "فشل تعديل المنسق المؤقت."
+                        : "فشل إضافة المنسق المؤقت.")
                 );
             }
 
-            setCoordinators((previous) => [
-                response.coordinator,
-                ...previous,
-            ]);
+            if (isEditing) {
+                setCoordinators((previous) =>
+                    previous.map((item) =>
+                        item.id === editingCoordinator.id
+                            ? response.coordinator
+                            : item
+                    )
+                );
+            } else {
+                setCoordinators((previous) => [
+                    response.coordinator,
+                    ...previous,
+                ]);
+            }
 
-            setModalOpen(false);
+            closeCoordinatorModal();
         } catch (err) {
-            console.error("Create temporary coordinator:", err);
+            console.error(
+                isEditing
+                    ? "Update temporary coordinator:"
+                    : "Create temporary coordinator:",
+                err
+            );
 
             throw new Error(
-                err.message || "فشل إضافة المنسق المؤقت."
+                err.message ||
+                (isEditing
+                    ? "فشل تعديل المنسق المؤقت."
+                    : "فشل إضافة المنسق المؤقت.")
             );
         } finally {
             setSaving(false);
@@ -224,6 +297,8 @@ function TemporaryCoordinators() {
     // ==========================================
 
     const handleDelete = async (id) => {
+        if (!canDeleteTemporaryCoordinator) return;
+
         const coordinator = coordinators.find(
             (item) => item.id === id
         );
@@ -254,6 +329,17 @@ function TemporaryCoordinators() {
         } finally {
             setDeletingId(null);
         }
+    };
+
+    // ==========================================
+    // OPEN ADVERTISING COMPANIES MODAL
+    // ==========================================
+
+    const openCompanyModal = () => {
+        if (!canCreateAdvertisingCompany) return;
+
+        setCompanyActionError("");
+        setCompanyModalOpen(true);
     };
 
     // ==========================================
@@ -316,6 +402,8 @@ function TemporaryCoordinators() {
     // ==========================================
 
     const handleDeleteCompany = async (id) => {
+        if (!canCreateAdvertisingCompany) return;
+
         const company = companies.find(
             (item) => item.id === id
         );
@@ -418,18 +506,18 @@ function TemporaryCoordinators() {
                 dir="rtl"
                 className="min-h-screen bg-slate-100 p-4 sm:p-8"
             >
-                <div className="mx-auto max-w-7xl">
+                <div className="mx-auto max-w-350">
 
                     {/* PAGE HEADER */}
 
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                             <h1 className="text-3xl font-bold text-orange-600">
-                                إدارة المنسقين المؤقتين
+                                إدارة الاستثناءات المؤقتة
                             </h1>
 
                             <p className="mt-2 text-gray-600">
-                                عرض وإضافة وحذف بيانات المنسقين المؤقتين.
+                                عرض وإضافة وتعديل وحذف بيانات الاستثناءات المؤقتة.
                             </p>
                         </div>
 
@@ -442,21 +530,20 @@ function TemporaryCoordinators() {
                                 العودة لنظام التسويق
                             </button>
 
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setCompanyActionError("");
-                                    setCompanyModalOpen(true);
-                                }}
-                                className="rounded-lg border border-orange-600 bg-white px-5 py-3 font-semibold text-orange-600 transition hover:bg-orange-50"
-                            >
-                                إدارة الشركات الإعلانية
-                            </button>
+                            {canCreateAdvertisingCompany && (
+                                <button
+                                    type="button"
+                                    onClick={openCompanyModal}
+                                    className="rounded-lg border border-orange-600 bg-white px-5 py-3 font-semibold text-orange-600 transition hover:bg-orange-50"
+                                >
+                                    إدارة الشركات الدعايا
+                                </button>
+                            )}
 
                             {canCreateTemporaryCoordinator && (
                                 <button
                                     type="button"
-                                    onClick={() => setModalOpen(true)}
+                                    onClick={openCreateModal}
                                     disabled={
                                         companiesLoading ||
                                         companies.length === 0
@@ -494,7 +581,9 @@ function TemporaryCoordinators() {
                             </p>
 
                             <p className="mt-2 text-3xl font-bold text-orange-600">
-                                {coordinators.length}
+                                {canViewTemporaryCoordinators
+                                    ? coordinators.length
+                                    : "-"}
                             </p>
                         </div>
 
@@ -504,270 +593,287 @@ function TemporaryCoordinators() {
                             </p>
 
                             <p className="mt-2 text-3xl font-bold text-orange-600">
-                                {companies.length}
+                                {canCreateAdvertisingCompany
+                                    ? companies.length
+                                    : "-"}
                             </p>
                         </div>
                     </section>
 
                     {/* SEARCH FILTERS */}
 
-                    <section className="mt-8 rounded-xl bg-white p-5 shadow-sm">
-                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                            <h2 className="text-lg font-bold text-gray-800">
-                                البحث عن المنسقين المؤقتين
-                            </h2>
+                    {canViewTemporaryCoordinators && (
+                        <section className="mt-8 rounded-xl bg-white p-5 shadow-sm">
+                            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                <h2 className="text-lg font-bold text-gray-800">
+                                    البحث عن المنسقين المؤقتين
+                                </h2>
 
-                            <button
-                                type="button"
-                                onClick={clearSearch}
-                                disabled={
-                                    !companySearch &&
-                                    !advertisingCompanySearch &&
-                                    !nationalIdSearch
-                                }
-                                className="text-sm font-semibold text-orange-600 transition hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                                مسح الفلاتر
-                            </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-
-                            {/* MOTHER COMPANY */}
-
-                            <div>
-                                <label className="mb-2 block text-sm font-semibold text-gray-700">
-                                    الشركة الأم
-                                </label>
-
-                                <input
-                                    type="text"
-                                    value={companySearch}
-                                    onChange={(event) =>
-                                        setCompanySearch(event.target.value)
+                                <button
+                                    type="button"
+                                    onClick={clearSearch}
+                                    disabled={
+                                        !companySearch &&
+                                        !advertisingCompanySearch &&
+                                        !nationalIdSearch
                                     }
-                                    placeholder="ابحث باسم الشركة الأم..."
-                                    className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                                />
+                                    className="text-sm font-semibold text-orange-600 transition hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                    مسح الفلاتر
+                                </button>
                             </div>
 
-                            {/* ADVERTISING COMPANY */}
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                <div>
+                                    <label className="mb-2 block text-sm font-semibold text-gray-700">
+                                        الشركة الأم
+                                    </label>
 
-                            <div>
-                                <label className="mb-2 block text-sm font-semibold text-gray-700">
-                                    الشركة الإعلانية
-                                </label>
+                                    <input
+                                        type="text"
+                                        value={companySearch}
+                                        onChange={(event) =>
+                                            setCompanySearch(event.target.value)
+                                        }
+                                        placeholder="ابحث باسم الشركة الأم..."
+                                        className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                                    />
+                                </div>
 
-                                <input
-                                    type="text"
-                                    value={advertisingCompanySearch}
-                                    onChange={(event) =>
-                                        setAdvertisingCompanySearch(event.target.value)
-                                    }
-                                    placeholder="ابحث باسم الشركة الإعلانية..."
-                                    className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                                />
+                                <div>
+                                    <label className="mb-2 block text-sm font-semibold text-gray-700">
+                                        الشركة الدعايا
+                                    </label>
+
+                                    <input
+                                        type="text"
+                                        value={advertisingCompanySearch}
+                                        onChange={(event) =>
+                                            setAdvertisingCompanySearch(event.target.value)
+                                        }
+                                        placeholder="ابحث باسم الشركة الدعايا..."
+                                        className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="mb-2 block text-sm font-semibold text-gray-700">
+                                        الرقم القومي
+                                    </label>
+
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={nationalIdSearch}
+                                        onChange={(event) =>
+                                            setNationalIdSearch(
+                                                event.target.value.replace(/\D/g, "")
+                                            )
+                                        }
+                                        placeholder="ابحث بالرقم القومي..."
+                                        maxLength={14}
+                                        className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                                    />
+                                </div>
                             </div>
 
-                            {/* NATIONAL ID */}
-
-                            <div>
-                                <label className="mb-2 block text-sm font-semibold text-gray-700">
-                                    الرقم القومي
-                                </label>
-
-                                <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={nationalIdSearch}
-                                    onChange={(event) =>
-                                        setNationalIdSearch(
-                                            event.target.value.replace(/\D/g, "")
-                                        )
-                                    }
-                                    placeholder="ابحث بالرقم القومي..."
-                                    maxLength={14}
-                                    className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                                />
-                            </div>
-                        </div>
-
-                        <p className="mt-4 text-sm text-gray-500">
-                            عدد النتائج:{" "}
-                            <span className="font-bold text-orange-600">
-                                {filteredCoordinators.length}
-                            </span>
-                        </p>
-                    </section>
+                            <p className="mt-4 text-sm text-gray-500">
+                                عدد النتائج:{" "}
+                                <span className="font-bold text-orange-600">
+                                    {filteredCoordinators.length}
+                                </span>
+                            </p>
+                        </section>
+                    )}
 
                     {/* TEMPORARY COORDINATORS TABLE */}
 
-                    <section className="mt-8 overflow-hidden rounded-xl bg-white shadow-sm">
+                    {canViewTemporaryCoordinators && (
+                        <section className="mt-8 overflow-hidden rounded-xl bg-white shadow-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 p-5">
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-800">
+                                        قائمة الاستثناءات الموقتة
+                                    </h2>
 
-                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 p-5">
-                            <div>
-                                <h2 className="text-xl font-bold text-gray-800">
-                                    قائمة المنسقين المؤقتين
-                                </h2>
-
-                                <p className="mt-1 text-sm text-gray-500">
-                                    عدد النتائج: {filteredCoordinators.length}
-                                </p>
-                            </div>
-
-                            <button
-                                type="button"
-                                onClick={fetchCoordinators}
-                                disabled={loading}
-                                className="rounded-lg border border-orange-300 px-4 py-2 text-sm font-semibold text-orange-600 transition hover:bg-orange-50 disabled:opacity-50"
-                            >
-                                {loading
-                                    ? "جاري التحميل..."
-                                    : "تحديث البيانات ↻"}
-                            </button>
-                        </div>
-
-                        {/* LOADING */}
-
-                        {loading && (
-                            <p className="p-8 text-center text-gray-600">
-                                جاري تحميل البيانات...
-                            </p>
-                        )}
-
-                        {/* ERROR */}
-
-                        {error && (
-                            <div className="p-8 text-center text-red-600">
-                                <p>{error}</p>
+                                    <p className="mt-1 text-sm text-gray-500">
+                                        عدد النتائج: {filteredCoordinators.length}
+                                    </p>
+                                </div>
 
                                 <button
                                     type="button"
                                     onClick={fetchCoordinators}
-                                    className="mt-3 font-semibold underline"
+                                    disabled={loading}
+                                    className="rounded-lg border border-orange-300 px-4 py-2 text-sm font-semibold text-orange-600 transition hover:bg-orange-50 disabled:opacity-50"
                                 >
-                                    إعادة المحاولة
+                                    {loading
+                                        ? "جاري التحميل..."
+                                        : "تحديث البيانات ↻"}
                                 </button>
                             </div>
-                        )}
 
-                        {/* EMPTY */}
-
-                        {!loading &&
-                            !error &&
-                            filteredCoordinators.length === 0 && (
-                                <p className="p-8 text-center text-gray-500">
-                                    {coordinators.length === 0
-                                        ? "لا توجد بيانات للمنسقين المؤقتين."
-                                        : "لا توجد نتائج مطابقة لعملية البحث."}
+                            {loading && (
+                                <p className="p-8 text-center text-gray-600">
+                                    جاري تحميل البيانات...
                                 </p>
                             )}
 
-                        {/* TABLE */}
+                            {error && (
+                                <div className="p-8 text-center text-red-600">
+                                    <p>{error}</p>
 
-                        {!loading &&
-                            !error &&
-                            filteredCoordinators.length > 0 && (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full min-w-275 text-right text-sm">
-                                        <thead className="bg-orange-50 text-gray-700">
-                                            <tr>
-                                                {[
-                                                    "م",
-                                                    "الاسم",
-                                                    "الشركة الأم",
-                                                    "الشركة الإعلانية",
-                                                    "الرقم القومي",
-                                                    "الفرع",
-                                                    "من تاريخ",
-                                                    "إلى تاريخ",
-                                                    "الإجراءات",
-                                                ].map((heading) => (
-                                                    <th
-                                                        key={heading}
-                                                        className="whitespace-nowrap px-4 py-4 font-bold"
-                                                    >
-                                                        {heading}
-                                                    </th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-
-                                        <tbody className="divide-y divide-gray-100">
-                                            {filteredCoordinators.map(
-                                                (coordinator, index) => (
-                                                    <tr
-                                                        key={coordinator.id}
-                                                        className="transition hover:bg-orange-50"
-                                                    >
-                                                        <td className="whitespace-nowrap px-4 py-4">
-                                                            {index + 1}
-                                                        </td>
-
-                                                        <td className="whitespace-nowrap px-4 py-4 font-semibold text-gray-800">
-                                                            {coordinator.name ?? "-"}
-                                                        </td>
-
-                                                        <td className="whitespace-nowrap px-4 py-4">
-                                                            {coordinator.mother_company_name ??
-                                                                coordinator.mother_company ??
-                                                                "-"}
-                                                        </td>
-
-                                                        <td className="whitespace-nowrap px-4 py-4">
-                                                            {coordinator.advertising_company_name ??
-                                                                coordinator.advertising_company ??
-                                                                "-"}
-                                                        </td>
-
-                                                        <td className="whitespace-nowrap px-4 py-4">
-                                                            {coordinator.national_id_number ?? "-"}
-                                                        </td>
-
-                                                        <td className="whitespace-nowrap px-4 py-4">
-                                                            {coordinator.branch_name ??
-                                                                coordinator.branch ??
-                                                                "-"}
-                                                        </td>
-
-                                                        <td className="whitespace-nowrap px-4 py-4">
-                                                            {formatDate(coordinator.from_date)}
-                                                        </td>
-
-                                                        <td className="whitespace-nowrap px-4 py-4">
-                                                            {formatDate(coordinator.to_date)}
-                                                        </td>
-
-                                                        <td className="whitespace-nowrap px-4 py-4">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    handleDelete(coordinator.id)
-                                                                }
-                                                                disabled={
-                                                                    deletingId === coordinator.id
-                                                                }
-                                                                className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                                                            >
-                                                                {deletingId === coordinator.id
-                                                                    ? "جاري الحذف..."
-                                                                    : "حذف"}
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                )
-                                            )}
-                                        </tbody>
-                                    </table>
+                                    <button
+                                        type="button"
+                                        onClick={fetchCoordinators}
+                                        className="mt-3 font-semibold underline"
+                                    >
+                                        إعادة المحاولة
+                                    </button>
                                 </div>
                             )}
-                    </section>
+
+                            {!loading &&
+                                !error &&
+                                filteredCoordinators.length === 0 && (
+                                    <p className="p-8 text-center text-gray-500">
+                                        {coordinators.length === 0
+                                            ? "لا توجد بيانات للمنسقين المؤقتين."
+                                            : "لا توجد نتائج مطابقة لعملية البحث."}
+                                    </p>
+                                )}
+
+                            {!loading &&
+                                !error &&
+                                filteredCoordinators.length > 0 && (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full min-w-275 text-right text-sm">
+                                            <thead className="bg-orange-50 text-gray-700">
+                                                <tr>
+                                                    {[
+                                                        "م",
+                                                        "الاسم",
+                                                        "الشركة الأم",
+                                                        "الشركة الإعلانية",
+                                                        "الرقم القومي",
+                                                        "الفرع",
+                                                        "من تاريخ",
+                                                        "إلى تاريخ",
+                                                        "الملاحظات",
+                                                        ...(canEditTemporaryCoordinator ||
+                                                        canDeleteTemporaryCoordinator
+                                                            ? ["الإجراءات"]
+                                                            : []),
+                                                    ].map((heading) => (
+                                                        <th
+                                                            key={heading}
+                                                            className="whitespace-nowrap px-4 py-4 font-bold"
+                                                        >
+                                                            {heading}
+                                                        </th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+
+                                            <tbody className="divide-y divide-gray-100">
+                                                {filteredCoordinators.map(
+                                                    (coordinator, index) => (
+                                                        <tr
+                                                            key={coordinator.id}
+                                                            className="transition hover:bg-orange-50"
+                                                        >
+                                                            <td className="whitespace-nowrap px-4 py-4">
+                                                                {index + 1}
+                                                            </td>
+
+                                                            <td className="whitespace-nowrap px-4 py-4 font-semibold text-gray-800">
+                                                                {coordinator.name ?? "-"}
+                                                            </td>
+
+                                                            <td className="whitespace-nowrap px-4 py-4">
+                                                                {coordinator.mother_company_name ??
+                                                                    coordinator.mother_company ??
+                                                                    "-"}
+                                                            </td>
+
+                                                            <td className="whitespace-nowrap px-4 py-4">
+                                                                {coordinator.advertising_company_name ??
+                                                                    coordinator.advertising_company ??
+                                                                    "-"}
+                                                            </td>
+
+                                                            <td className="whitespace-nowrap px-4 py-4">
+                                                                {coordinator.national_id_number ?? "-"}
+                                                            </td>
+
+                                                            <td className="whitespace-nowrap px-4 py-4">
+                                                                {coordinator.branch_name ??
+                                                                    coordinator.branch ??
+                                                                    "-"}
+                                                            </td>
+
+                                                            <td className="whitespace-nowrap px-4 py-4">
+                                                                {formatDate(coordinator.from_date)}
+                                                            </td>
+
+                                                            <td className="whitespace-nowrap px-4 py-4">
+                                                                {formatDate(coordinator.to_date)}
+                                                            </td>
+
+                                                            <td className="min-w-40 px-4 py-4">
+                                                                {coordinator.notes || "-"}
+                                                            </td>
+
+                                                            {(canEditTemporaryCoordinator ||
+                                                            canDeleteTemporaryCoordinator) && (
+                                                                <td className="whitespace-nowrap px-4 py-4">
+                                                                    <div className="flex items-center gap-2">
+                                                                        {canEditTemporaryCoordinator && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() =>
+                                                                                    openEditModal(coordinator)
+                                                                                }
+                                                                                className="rounded-lg bg-orange-600 px-4 py-2 font-semibold text-white transition hover:bg-orange-700"
+                                                                            >
+                                                                                تعديل
+                                                                            </button>
+                                                                        )}
+
+                                                                        {canDeleteTemporaryCoordinator && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() =>
+                                                                                    handleDelete(coordinator.id)
+                                                                                }
+                                                                                disabled={
+                                                                                    deletingId === coordinator.id
+                                                                                }
+                                                                                className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                                            >
+                                                                                {deletingId === coordinator.id
+                                                                                    ? "جاري الحذف..."
+                                                                                    : "حذف"}
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                            )}
+                                                        </tr>
+                                                    )
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                        </section>
+                    )}
                 </div>
             </main>
 
             {/* ADVERTISING COMPANIES MODAL */}
 
-            {companyModalOpen && (
+            {canCreateAdvertisingCompany && companyModalOpen && (
                 <div
                     dir="rtl"
                     className="fixed inset-0 z-70 flex items-center justify-center overflow-y-auto bg-black/50 p-4"
@@ -797,54 +903,48 @@ function TemporaryCoordinators() {
                             </button>
                         </div>
 
-                        {/* CREATE COMPANY */}
+                        <form
+                            onSubmit={handleCreateCompany}
+                            className="rounded-lg border border-gray-200 bg-gray-50 p-4"
+                        >
+                            <label className="mb-2 block font-semibold text-gray-700">
+                                اسم الشركة الإعلانية
+                            </label>
 
-                        {canCreateAdvertisingCompany && (
-                            <form
-                                onSubmit={handleCreateCompany}
-                                className="rounded-lg border border-gray-200 bg-gray-50 p-4"
-                            >
-                                <label className="mb-2 block font-semibold text-gray-700">
-                                    اسم الشركة الإعلانية
-                                </label>
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                                <input
+                                    type="text"
+                                    value={newCompanyName}
+                                    onChange={(event) => {
+                                        setNewCompanyName(event.target.value);
+                                        setCompanyActionError("");
+                                    }}
+                                    placeholder="أدخل اسم الشركة"
+                                    maxLength={150}
+                                    required
+                                    className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-4 py-3 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                                />
 
-                                <div className="flex flex-col gap-3 sm:flex-row">
-                                    <input
-                                        type="text"
-                                        value={newCompanyName}
-                                        onChange={(event) => {
-                                            setNewCompanyName(event.target.value);
-                                            setCompanyActionError("");
-                                        }}
-                                        placeholder="أدخل اسم الشركة"
-                                        maxLength={150}
-                                        required
-                                        className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-4 py-3 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                                    />
-
-                                    <button
-                                        type="submit"
-                                        disabled={
-                                            companySaving ||
-                                            !newCompanyName.trim()
-                                        }
-                                        className="rounded-lg bg-orange-600 px-5 py-3 font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        {companySaving
-                                            ? "جاري الإضافة..."
-                                            : "إضافة"}
-                                    </button>
-                                </div>
-                            </form>
-                        )}
+                                <button
+                                    type="submit"
+                                    disabled={
+                                        companySaving ||
+                                        !newCompanyName.trim()
+                                    }
+                                    className="rounded-lg bg-orange-600 px-5 py-3 font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {companySaving
+                                        ? "جاري الإضافة..."
+                                        : "إضافة"}
+                                </button>
+                            </div>
+                        </form>
 
                         {companyActionError && (
                             <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
                                 {companyActionError}
                             </div>
                         )}
-
-                        {/* COMPANY LIST */}
 
                         <div className="mt-6">
                             <div className="mb-3 flex items-center justify-between">
@@ -918,15 +1018,19 @@ function TemporaryCoordinators() {
                 </div>
             )}
 
-            {/* CREATE TEMPORARY COORDINATOR MODAL */}
+            {/* CREATE / EDIT TEMPORARY COORDINATOR MODAL */}
 
-            <CreateTemporaryCoordinatorModal
-                open={modalOpen}
-                onClose={() => setModalOpen(false)}
-                onSubmit={handleCreate}
-                companies={companies}
-                saving={saving}
-            />
+            {(canCreateTemporaryCoordinator || canEditTemporaryCoordinator) && (
+                <CreateTemporaryCoordinatorModal
+                    open={modalOpen}
+                    onClose={closeCoordinatorModal}
+                    onSubmit={handleSave}
+                    companies={companies}
+                    saving={saving}
+                    initialData={editingCoordinator}
+                    mode={editingCoordinator ? "edit" : "create"}
+                />
+            )}
         </>
     );
 }
