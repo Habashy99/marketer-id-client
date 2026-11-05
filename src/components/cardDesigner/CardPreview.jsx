@@ -2,7 +2,7 @@
 const SAMPLE_VALUES = {
     name: "اسم الموظف",
     company_name: "جملة ماركت",
-    date: "2026-10-25",
+    id_expiry_date: "2030-01-01",
     code: "1001",
     national_id_number: "00000000000000",
     job: "مندوب",
@@ -12,7 +12,7 @@ const ELEMENT_TYPES = [
     { type: "photo", label: "الصورة" },
     { type: "name", label: "اسم الموظف" },
     { type: "company_name", label: "الشركة" },
-    { type: "date", label: "التاريخ" },
+    { type: "id_expiry_date", label: "التاريخ" },
     { type: "code", label: "كود الموظف" },
     { type: "national_id_number", label: "الرقم القومي" },
     { type: "job", label: "الوظيفة" },
@@ -30,6 +30,7 @@ export default function CardPreview({
     drag,
     setDrag,
     setCanvasResize,
+    canvasBackgroundImage,
 }) {
     return (
         <section className="print-card-only rounded-xl bg-white p-4 shadow">
@@ -58,7 +59,13 @@ export default function CardPreview({
                             height: template.height,
                             transform: `scale(${previewScale})`,
                             transformOrigin: "top left",
-                            background: "#ffffff",
+                            backgroundColor: "#ffffff",
+                            backgroundImage: canvasBackgroundImage
+                                ? `url("${canvasBackgroundImage}")`
+                                : "none",
+                            backgroundSize: "100% 100%",
+                            backgroundPosition: "center",
+                            backgroundRepeat: "no-repeat",
                             overflow: "hidden",
                             boxShadow: "0 4px 20px #0004",
                         }}

@@ -148,8 +148,21 @@ function createCroppedImage(imageFile, croppedAreaPixels) {
                     throw new Error("تعذر تجهيز الصورة للقص.");
                 }
 
-                canvas.width = croppedAreaPixels.width;
-                canvas.height = croppedAreaPixels.height;
+                const MAX_DIMENSION = 1600;
+
+                const scale = Math.min(
+                    1,
+                    MAX_DIMENSION / Math.max(
+                        croppedAreaPixels.width,
+                        croppedAreaPixels.height
+                    )
+                );
+
+                const outputWidth = Math.round(croppedAreaPixels.width * scale);
+                const outputHeight = Math.round(croppedAreaPixels.height * scale);
+
+                canvas.width = outputWidth;
+                canvas.height = outputHeight;
 
                 context.drawImage(
                     image,
@@ -159,8 +172,8 @@ function createCroppedImage(imageFile, croppedAreaPixels) {
                     croppedAreaPixels.height,
                     0,
                     0,
-                    croppedAreaPixels.width,
-                    croppedAreaPixels.height
+                    outputWidth,
+                    outputHeight
                 );
 
                 canvas.toBlob(
@@ -177,7 +190,7 @@ function createCroppedImage(imageFile, croppedAreaPixels) {
                         const croppedFile = new File(
                             [blob],
                             imageFile.name.replace(/\.[^/.]+$/, "") +
-                                "-cropped.jpg",
+                            "-cropped.jpg",
                             {
                                 type: "image/jpeg",
                                 lastModified: Date.now(),
@@ -289,7 +302,7 @@ function ImageCropModal({
                     <input
                         type="range"
                         min={1}
-                        max={3}
+                        max={10}
                         step={0.1}
                         value={zoom}
                         onChange={(event) =>
@@ -628,12 +641,12 @@ export default function CoordinatorDetailsModal({
                     initialOption={
                         value
                             ? {
-                                  value: String(value),
-                                  label:
-                                      coordinator.supplier_name ||
-                                      coordinator.company_name ||
-                                      String(value),
-                              }
+                                value: String(value),
+                                label:
+                                    coordinator.supplier_name ||
+                                    coordinator.company_name ||
+                                    String(value),
+                            }
                             : null
                     }
                 />

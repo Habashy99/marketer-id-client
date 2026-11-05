@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from "react";
 import Select from "react-select";
 import { sendHttpReq } from "../lib/httpHandler";
@@ -141,7 +140,10 @@ export default function SearchableSelect({
     // Handle selection
     function handleChange(option) {
         setSelectedOption(option);
-        onChange?.(option?.value ?? "");
+
+        // Pass both the selected value and the complete option
+        onChange?.(option?.value ?? "", option);
+
         setInputValue("");
     }
 

@@ -11,6 +11,7 @@ import PrintLogManagment from "./pages/marketing/printLogs/printLogsManagement.j
 import CardDesigner from "./pages/marketing/cardDesigner/cardDesigner.jsx";
 import CardManagement from "./pages/marketing/cardManagement/cardManagement.jsx";
 import TemporaryCoordinators from "./pages/marketing/temporaryCoordinator/temporaryCoordinator.jsx";
+import SecurityManagement from "./pages/marketing/security/securityManagement"
 
 function App() {
     return (
@@ -45,6 +46,10 @@ function App() {
                         element={<CardDesigner />}
                     />
                     <Route path="/pricing" element={<PricingHome />} />
+                    <Route
+                        path="/marketing/security"
+                        element={<SecurityManagement />}
+                    />
                 </Routes>
             </HashRouter>
         </AuthProvider>

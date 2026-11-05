@@ -28,7 +28,10 @@ const DEFAULT_CANVAS = {
     height: 540,
     background: "#ffffff",
 };
-
+const CR80_CARD = {
+    width: 85.6,
+    height: 53.98,
+};
 const DEFAULT_SPACING = {
     top: 10,
     right: 10,
@@ -178,9 +181,14 @@ function normalizeTemplate(record, index = 0) {
     const elements = rawElements.map(
         (rawElement, elementIndex) => {
             const element = parseObject(rawElement);
-
             return {
                 ...element,
+
+                // Migrate old saved templates to the current field name.
+                type:
+                    element.type === "date"
+                        ? "id_expiry_date"
+                        : element.type,
 
                 id:
                     element.id ??
@@ -237,41 +245,44 @@ function getTemplateKey(template) {
    Coordinator values
 ------------------------------------------------------- */
 
-function getCoordinatorValue(type, coordinator) {
-    const photoUrl = getPhotoUrl(
-        coordinator?.profile_picture
-    );
-
+function getCoordinatorValue(coordinator, type) {
     const values = {
         name: coordinator?.name,
         company_name: coordinator?.company_name,
-        date: new Date().toLocaleDateString("en-GB"),
         code: coordinator?.code,
-        national_id_number: coordinator?.national_id_number,
         job: coordinator?.job,
-
-        photo: photoUrl,
-        image: photoUrl,
-        profile_picture: photoUrl,
+        national_id_number: coordinator?.national_id_number,
+        id_expiry_date: coordinator?.id_expiry_date,
     };
 
-    return values[type];
+    const value = values[type];
+
+    if (value == null || value === "") return "";
+
+    if (type === "id_expiry_date") {
+        return String(value).slice(0, 10);
+    }
+
+    return String(value);
 }
 
 function getElementValue(element, coordinator) {
-    const value = getCoordinatorValue(
-        element.type,
-        coordinator
-    );
+    const value = getCoordinatorValue(coordinator, element.type);
 
-    if (value !== undefined && value !== null) {
-        return String(value);
+    // Never use a fixed sample date for the expiry date.
+    if (element.type === "id_expiry_date") {
+        return value;
+    }
+
+    if (value !== "") {
+        return value;
     }
 
     return (
         element.value ??
         SAMPLE_VALUES[element.type] ??
-        getElementLabel(element.type)
+        getElementLabel(element.type) ??
+        ""
     );
 }
 
@@ -417,7 +428,6 @@ async function waitForImages(container) {
 
 function PrintableCard({ design, coordinator }) {
     if (!design) return null;
-
     const width = toPositiveDimension(
         design.width,
         DEFAULT_CANVAS.width
@@ -655,10 +665,13 @@ export default function PrintCoordinatorModal({
             .getElementById("temporary-coordinator-print")
             ?.remove();
 
+        document
+            .getElementById("temporary-coordinator-print-style")
+            ?.remove();
+
         printInProgressRef.current = false;
         setPrintBusy(false);
     }, []);
-
     const loadTemplates = useCallback(async () => {
         setLoading(true);
         setError("");
@@ -782,6 +795,10 @@ export default function PrintCoordinatorModal({
             document
                 .getElementById("temporary-coordinator-print")
                 ?.remove();
+
+            document
+                .getElementById("temporary-coordinator-print-style")
+                ?.remove();
         };
     }, []);
 
@@ -864,6 +881,7 @@ export default function PrintCoordinatorModal({
        Print handler
     --------------------------------------------------- */
 
+
     const handlePrint = async () => {
         if (
             !previewTemplate ||
@@ -888,6 +906,7 @@ export default function PrintCoordinatorModal({
         setError("");
 
         let printContainer = null;
+        let printStyle = null;
         let printFinished = false;
 
         const finishPrint = () => {
@@ -910,7 +929,10 @@ export default function PrintCoordinatorModal({
             }
 
             printContainer?.remove();
+            printStyle?.remove();
+
             printContainer = null;
+            printStyle = null;
 
             printInProgressRef.current = false;
             setPrintBusy(false);
@@ -918,15 +940,6 @@ export default function PrintCoordinatorModal({
 
         const handleAfterPrint = async () => {
             if (printFinished) return;
-
-            if (afterPrintHandlerRef.current) {
-                window.removeEventListener(
-                    "afterprint",
-                    afterPrintHandlerRef.current
-                );
-
-                afterPrintHandlerRef.current = null;
-            }
 
             if (fallbackTimerRef.current) {
                 window.clearTimeout(fallbackTimerRef.current);
@@ -938,14 +951,12 @@ export default function PrintCoordinatorModal({
                     "هل تمت طباعة البطاقة بنجاح؟"
                 );
 
-                if (!confirmed) {
-                    return;
+                if (confirmed) {
+                    await savePrintLog();
+
+                    setError("");
+                    window.alert("تم تسجيل عملية الطباعة بنجاح.");
                 }
-
-                await savePrintLog();
-
-                setError("");
-                window.alert("تم تسجيل عملية الطباعة بنجاح.");
             } catch (err) {
                 setError(
                     err?.message ??
@@ -968,96 +979,168 @@ export default function PrintCoordinatorModal({
                 );
             }
 
-            // Clone the card without moving React's original DOM.
+            // Original template canvas dimensions.
+            const canvasWidth = toPositiveDimension(
+                previewTemplate.width,
+                DEFAULT_CANVAS.width
+            );
+
+            const canvasHeight = toPositiveDimension(
+                previewTemplate.height,
+                DEFAULT_CANVAS.height
+            );
+
+            // Convert CR-80 physical dimensions to CSS pixels.
+            const targetWidthPx =
+                (CR80_CARD.width / 25.4) * 96;
+
+            const targetHeightPx =
+                (CR80_CARD.height / 25.4) * 96;
+
+            // Calculate independent scaling factors.
+            const scaleX = targetWidthPx / canvasWidth;
+            const scaleY = targetHeightPx / canvasHeight;
+
+            // Create an isolated print container.
             printContainer = document.createElement("div");
             printContainer.id = "temporary-coordinator-print";
-
 
             Object.assign(printContainer.style, {
                 position: "fixed",
                 left: "-100000px",
                 top: "0",
-                width: `${previewTemplate.width}px`,
-                height: `${previewTemplate.height}px`,
+                width: `${CR80_CARD.width}mm`,
+                height: `${CR80_CARD.height}mm`,
                 margin: "0",
                 padding: "0",
+                overflow: "hidden",
                 background: "#ffffff",
-                zIndex: "-1",
+                boxSizing: "border-box",
             });
 
+            // Clone the React card without changing the original.
+            const clonedCard = originalCard.cloneNode(true);
 
-            printContainer.appendChild(
-                originalCard.cloneNode(true)
-            );
+            Object.assign(clonedCard.style, {
+                position: "absolute",
+                left: "0",
+                top: "0",
+                width: `${canvasWidth}px`,
+                height: `${canvasHeight}px`,
+                margin: "0",
+                padding: "0",
+                transform: `scale(${scaleX}, ${scaleY})`,
+                transformOrigin: "top left",
+                boxShadow: "none",
+                boxSizing: "border-box",
+                flex: "none",
+            });
 
-            // Hide the application UI only while printing.
-            const printStyle = document.createElement("style");
+            printContainer.appendChild(clonedCard);
 
+            // Create print stylesheet.
+            printStyle = document.createElement("style");
             printStyle.id = "temporary-coordinator-print-style";
 
             printStyle.textContent = `
-    @page {
-        size: auto;
-        margin: 0;
-    }
+            @page {
+                size: ${CR80_CARD.width}mm ${CR80_CARD.height}mm;
+                margin: 0;
+            }
 
-    @media print {
-        html,
-        body {
-            width: 100% !important;
-            min-height: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-        }
+            @media print {
+                html,
+                body {
+                    width: ${CR80_CARD.width}mm !important;
+                    height: ${CR80_CARD.height}mm !important;
 
-        body * {
-            visibility: hidden !important;
-        }
+                    min-width: ${CR80_CARD.width}mm !important;
+                    min-height: ${CR80_CARD.height}mm !important;
 
-        #temporary-coordinator-print,
-        #temporary-coordinator-print * {
-            visibility: visible !important;
-        }
+                    margin: 0 !important;
+                    padding: 0 !important;
 
-        #temporary-coordinator-print {
-            position: fixed !important;
-            inset: 0 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            width: 100% !important;
-            height: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-            overflow: visible !important;
-            background: white !important;
-        }
+                    overflow: hidden !important;
+                }
 
-        #temporary-coordinator-print .coordinator-print-card {
-            position: relative !important;
-            flex: 0 0 auto !important;
-            margin: 0 !important;
-            transform: none !important;
-            box-shadow: none !important;
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
-            print-color-adjust: exact !important;
-            -webkit-print-color-adjust: exact !important;
-        }
-    }
-`;
+                body * {
+                    visibility: hidden !important;
+                }
+
+                #temporary-coordinator-print,
+                #temporary-coordinator-print * {
+                    visibility: visible !important;
+                }
+
+                #temporary-coordinator-print {
+                    position: absolute !important;
+
+                    left: 0 !important;
+                    top: 0 !important;
+
+                    display: block !important;
+
+                    width: ${CR80_CARD.width}mm !important;
+                    height: ${CR80_CARD.height}mm !important;
+
+                    min-width: ${CR80_CARD.width}mm !important;
+                    min-height: ${CR80_CARD.height}mm !important;
+
+                    margin: 0 !important;
+                    padding: 0 !important;
+
+                    overflow: hidden !important;
+
+                    background: #ffffff !important;
+                    box-sizing: border-box !important;
+                }
+
+                #temporary-coordinator-print .coordinator-print-card {
+                    position: absolute !important;
+
+                    left: 0 !important;
+                    top: 0 !important;
+
+                    width: ${canvasWidth}px !important;
+                    height: ${canvasHeight}px !important;
+
+                    margin: 0 !important;
+                    padding: 0 !important;
+
+                    transform: scale(${scaleX}, ${scaleY}) !important;
+                    transform-origin: top left !important;
+
+                    box-shadow: none !important;
+                    border: none !important;
+
+                    overflow: hidden !important;
+
+                    break-inside: avoid !important;
+                    page-break-inside: avoid !important;
+
+                    print-color-adjust: exact !important;
+                    -webkit-print-color-adjust: exact !important;
+                }
+
+                #temporary-coordinator-print img {
+                    print-color-adjust: exact !important;
+                    -webkit-print-color-adjust: exact !important;
+                }
+            }
+        `;
 
             document.head.appendChild(printStyle);
             document.body.appendChild(printContainer);
 
+            // Wait for card images.
             await waitForImages(printContainer);
 
+            // Wait for fonts.
             if (document.fonts?.ready) {
                 await document.fonts.ready;
             }
 
+            // Wait for browser layout and painting.
             await new Promise((resolve) => {
                 requestAnimationFrame(() => {
                     requestAnimationFrame(resolve);
@@ -1072,15 +1155,14 @@ export default function PrintCoordinatorModal({
                 { once: true }
             );
 
+            // Open print dialog.
             window.print();
 
-            // Fallback: prevent the UI from remaining locked forever
-            // if the browser does not fire afterprint.
+            // Fallback cleanup if afterprint is not fired.
             fallbackTimerRef.current = window.setTimeout(() => {
-                if (!printFinished) {
-                    finishPrint();
-                }
+                finishPrint();
             }, 120000);
+
         } catch (err) {
             finishPrint();
 
@@ -1090,6 +1172,7 @@ export default function PrintCoordinatorModal({
             );
         }
     };
+
 
     /* ---------------------------------------------------
        Render

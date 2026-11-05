@@ -243,7 +243,7 @@ function ImageCropModal({
                     <input
                         type="range"
                         min={1}
-                        max={3}
+                        max={10}
                         step={0.1}
                         value={zoom}
                         onChange={(event) =>

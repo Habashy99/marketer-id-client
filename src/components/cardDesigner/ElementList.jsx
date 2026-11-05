@@ -3,7 +3,7 @@ const ELEMENT_TYPES = [
     { type: "photo", label: "الصورة", x: 30, y: 30 },
     { type: "name", label: "اسم الموظف", x: 220, y: 80 },
     { type: "company_name", label: "الشركة", x: 220, y: 145 },
-    { type: "date", label: "التاريخ", x: 220, y: 200 },
+    { type: "id_expiry_date", label: "التاريخ", x: 220, y: 200 },
     { type: "code", label: "كود الموظف", x: 220, y: 245 },
     { type: "national_id_number", label: "الرقم القومي", x: 220, y: 290 },
     { type: "job", label: "الوظيفة", x: 220, y: 335 },

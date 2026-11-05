@@ -41,8 +41,8 @@ function TemporaryCoordinators() {
     // LOADING STATES
     // ==========================================
 
-    const [loading, setLoading] = useState(false);
-    const [companiesLoading, setCompaniesLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [companiesLoading, setCompaniesLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [companySaving, setCompanySaving] = useState(false);
     const [deletingId, setDeletingId] = useState(null);
@@ -73,9 +73,6 @@ function TemporaryCoordinators() {
     const fetchCoordinators = useCallback(async () => {
         if (!canViewTemporaryCoordinators) return;
 
-        setLoading(true);
-        setError("");
-
         try {
             const response = await sendHttpReq("temporary-coordinators");
 
@@ -84,6 +81,7 @@ function TemporaryCoordinators() {
             }
 
             setCoordinators(response.coordinators ?? response.records ?? []);
+            setError("");
         } catch (err) {
             console.error("Fetch temporary coordinators:", err);
             setError(err.message || "فشل تحميل بيانات المنسقين المؤقتين.");
@@ -97,9 +95,6 @@ function TemporaryCoordinators() {
     // ==========================================
 
     const fetchCompanies = useCallback(async () => {
-        setCompaniesLoading(true);
-        setCompaniesError("");
-
         try {
             const response = await sendHttpReq("advertising-companies");
 
@@ -108,6 +103,7 @@ function TemporaryCoordinators() {
             }
 
             setCompanies(response.companies ?? []);
+            setCompaniesError("");
         } catch (err) {
             console.error("Fetch advertising companies:", err);
             setCompaniesError(err.message || "فشل تحميل الشركات الإعلانية.");
@@ -170,18 +166,38 @@ function TemporaryCoordinators() {
     // ==========================================
 
     useEffect(() => {
-        if (!user) return;
+        if (!user) return undefined;
 
-        if (canViewTemporaryCoordinators) {
-            fetchCoordinators();
-        }
+        // Defer the requests so this effect does not synchronously trigger
+        // state updates through fetchCoordinators/fetchCompanies.
+        let cancelled = false;
 
-        if (
-            canCreateTemporaryCoordinator ||
-            canCreateAdvertisingCompany
-        ) {
-            fetchCompanies();
-        }
+        const startInitialFetch = async () => {
+            await Promise.resolve();
+
+            if (cancelled) return;
+
+            const requests = [];
+
+            if (canViewTemporaryCoordinators) {
+                requests.push(fetchCoordinators());
+            }
+
+            if (
+                canCreateTemporaryCoordinator ||
+                canCreateAdvertisingCompany
+            ) {
+                requests.push(fetchCompanies());
+            }
+
+            await Promise.all(requests);
+        };
+
+        startInitialFetch();
+
+        return () => {
+            cancelled = true;
+        };
     }, [
         user,
         canViewTemporaryCoordinators,
@@ -761,7 +777,7 @@ function TemporaryCoordinators() {
                                                         "إلى تاريخ",
                                                         "الملاحظات",
                                                         ...(canEditTemporaryCoordinator ||
-                                                        canDeleteTemporaryCoordinator
+                                                            canDeleteTemporaryCoordinator
                                                             ? ["الإجراءات"]
                                                             : []),
                                                     ].map((heading) => (
@@ -825,40 +841,40 @@ function TemporaryCoordinators() {
                                                             </td>
 
                                                             {(canEditTemporaryCoordinator ||
-                                                            canDeleteTemporaryCoordinator) && (
-                                                                <td className="whitespace-nowrap px-4 py-4">
-                                                                    <div className="flex items-center gap-2">
-                                                                        {canEditTemporaryCoordinator && (
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() =>
-                                                                                    openEditModal(coordinator)
-                                                                                }
-                                                                                className="rounded-lg bg-orange-600 px-4 py-2 font-semibold text-white transition hover:bg-orange-700"
-                                                                            >
-                                                                                تعديل
-                                                                            </button>
-                                                                        )}
+                                                                canDeleteTemporaryCoordinator) && (
+                                                                    <td className="whitespace-nowrap px-4 py-4">
+                                                                        <div className="flex items-center gap-2">
+                                                                            {canEditTemporaryCoordinator && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() =>
+                                                                                        openEditModal(coordinator)
+                                                                                    }
+                                                                                    className="rounded-lg bg-orange-600 px-4 py-2 font-semibold text-white transition hover:bg-orange-700"
+                                                                                >
+                                                                                    تعديل
+                                                                                </button>
+                                                                            )}
 
-                                                                        {canDeleteTemporaryCoordinator && (
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() =>
-                                                                                    handleDelete(coordinator.id)
-                                                                                }
-                                                                                disabled={
-                                                                                    deletingId === coordinator.id
-                                                                                }
-                                                                                className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                                                                            >
-                                                                                {deletingId === coordinator.id
-                                                                                    ? "جاري الحذف..."
-                                                                                    : "حذف"}
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
-                                                                </td>
-                                                            )}
+                                                                            {canDeleteTemporaryCoordinator && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() =>
+                                                                                        handleDelete(coordinator.id)
+                                                                                    }
+                                                                                    disabled={
+                                                                                        deletingId === coordinator.id
+                                                                                    }
+                                                                                    className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                                                >
+                                                                                    {deletingId === coordinator.id
+                                                                                        ? "جاري الحذف..."
+                                                                                        : "حذف"}
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </td>
+                                                                )}
                                                         </tr>
                                                     )
                                                 )}

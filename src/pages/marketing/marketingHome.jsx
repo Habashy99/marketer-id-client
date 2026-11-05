@@ -33,7 +33,13 @@ const marketingSections = [
         title: "نظام إدارة المنسقين المؤقتين",
         description: "إدارة بيانات المنسقين المؤقتين وفترات عملهم",
         path: "/marketing/temporary-coordinators",
-        parentPermission: 27, 
+        parentPermission: 27,
+    },
+    {
+        title: "نظام إدارة الأمن",
+        description: "إدارة بيانات الأشخاص والأسباب والمواقف الأمنية",
+        path: "/marketing/security",
+        parentPermission: 7,
     },
 ];
 
@@ -107,12 +113,7 @@ function MarketingHome() {
     const canViewStats = admin || hasPermission(user, 11);
 
     useEffect(() => {
-        if (!user || !canViewStats) {
-            setStats(null);
-            setLoading(false);
-            setError("");
-            return;
-        }
+        if (!user || !canViewStats) return;
 
         let cancelled = false;
 
@@ -134,10 +135,7 @@ function MarketingHome() {
                     setStats(response.stats);
                 }
             } catch (err) {
-                console.error(
-                    "Failed to load dashboard statistics:",
-                    err
-                );
+                console.error("Failed to load dashboard statistics:", err);
 
                 if (!cancelled) {
                     setError(err.message || "فشل تحميل الإحصائيات.");

@@ -12,7 +12,7 @@ export const ELEMENT_TYPES = [
     { type: "photo", label: "الصورة", x: 30, y: 30 },
     { type: "name", label: "اسم الموظف", x: 220, y: 80 },
     { type: "company_name", label: "الشركة", x: 220, y: 145 },
-    { type: "date", label: "التاريخ", x: 220, y: 200 },
+    { type: "id_expiry_date", label: "التاريخ", x: 220, y: 200 },
     { type: "code", label: "كود الموظف", x: 220, y: 245 },
     {
         type: "national_id_number",
@@ -26,7 +26,7 @@ export const ELEMENT_TYPES = [
 export const SAMPLE_VALUES = {
     name: "اسم الموظف",
     company_name: "جملة ماركت",
-    date: "2026-10-25",
+    id_expiry_date: "2030-01-01",
     code: "1001",
     national_id_number: "00000000000000",
     job: "مندوب",

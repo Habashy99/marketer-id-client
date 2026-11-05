@@ -1,17 +1,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import Header from "../../../components/header";
 import { sendHttpReq } from "../../../lib/httpHandler";
+import { API_BASE_URL } from "../../../lib/apiBase.js";
+import { createId } from "../../../utils/uuid.js";
 import { useAuth } from "../../../context/authContext";
 import { hasPermission } from "../../../helpers/permissions";
+
 import CanvasSettings from "../../../components/cardDesigner/CanvasSettings";
 import CardPreview from "../../../components/cardDesigner/CardPreview";
 import ElementList from "../../../components/cardDesigner/ElementList";
 import ElementProperties from "../../../components/cardDesigner/ElementProperties";
 import TemplateToolbar from "../../../components/cardDesigner/TemplateToolbar";
-import { useNavigate } from "react-router-dom";
-
 
 const TEMPLATES_ENDPOINT = "card-templates";
 const COORDINATOR_ENDPOINT = "coordinators/by-code";
@@ -70,7 +72,7 @@ function createElement(type) {
     const isPhoto = type === "photo";
 
     return {
-        id: crypto.randomUUID(),
+        id: createId(),
         type,
         value: SAMPLE_VALUES[type] ?? definition.label,
         x: definition.x,
@@ -109,7 +111,7 @@ function cloneDefaultTemplate() {
         padding: { ...DEFAULT_TEMPLATE.padding },
         elements: DEFAULT_TEMPLATE.elements.map((element) => ({
             ...element,
-            id: crypto.randomUUID(),
+            id: createId(),
         })),
     };
 }
@@ -202,15 +204,15 @@ function getPhotoUrl(coordinator) {
         coordinator?.picture ??
         "";
 
-    if (!photoPath) {
-        return "";
-    }
+    if (!photoPath) return "";
 
     if (/^https?:\/\//i.test(String(photoPath))) {
         return String(photoPath);
     }
 
-    return `http://127.0.0.1:3000/coordinators/photo?path=${encodeURIComponent(photoPath)}`;
+    return `${API_BASE_URL}/coordinators/photo?path=${encodeURIComponent(
+        photoPath
+    )}`;
 }
 
 function CardArtwork({ design, coordinator }) {
@@ -318,26 +320,25 @@ function CardArtwork({ design, coordinator }) {
 
 export default function CardTemplateSettings() {
     const { user } = useAuth();
+    const navigate = useNavigate();
 
     const canCreateDesign =
         hasPermission(user, 2) || hasPermission(user, 5);
-    const navigate = useNavigate();
+
     const canDeleteDesign =
         hasPermission(user, 3) || hasPermission(user, 6);
 
     const canPrintCard = hasPermission(user, 24);
-    const [selectedSavedTemplateId, setSelectedSavedTemplateId] = useState("");
+
+    const [canvasBackgroundImage, setCanvasBackgroundImage] = useState("");
+
+    const [selectedSavedTemplateId, setSelectedSavedTemplateId] =
+        useState("");
+
     const [savedTemplates, setSavedTemplates] = useState([]);
     const [templatesLoading, setTemplatesLoading] = useState(false);
     const [templatesError, setTemplatesError] = useState("");
 
-    const selectedSavedTemplate = useMemo(
-        () =>
-            savedTemplates.find(
-                (item) => String(item.id) === String(selectedSavedTemplateId)
-            ) ?? null,
-        [savedTemplates, selectedSavedTemplateId]
-    );
     const [template, setTemplate] = useState(cloneDefaultTemplate);
     const [selectedId, setSelectedId] = useState("");
     const [busy, setBusy] = useState(false);
@@ -353,10 +354,7 @@ export default function CardTemplateSettings() {
     const [selectedPrintTemplate, setSelectedPrintTemplate] = useState(null);
     const [coordinatorCode, setCoordinatorCode] = useState("");
     const [printCoordinator, setPrintCoordinator] = useState(null);
-
-    // Selected print type: "جديد" or "بدل فاقد".
     const [printType, setPrintType] = useState("جديد");
-
     const [printBusy, setPrintBusy] = useState(false);
     const [printError, setPrintError] = useState("");
 
@@ -365,6 +363,14 @@ export default function CardTemplateSettings() {
     const printInProgressRef = useRef(false);
     const afterPrintHandlerRef = useRef(null);
     const fallbackTimerRef = useRef(null);
+
+    const selectedSavedTemplate = useMemo(
+        () =>
+            savedTemplates.find(
+                (item) => String(item.id) === String(selectedSavedTemplateId)
+            ) ?? null,
+        [savedTemplates, selectedSavedTemplateId]
+    );
 
     const selectedElement = useMemo(
         () =>
@@ -376,6 +382,17 @@ export default function CardTemplateSettings() {
 
     const printDesign = selectedPrintTemplate?.design ?? null;
 
+    // BACKGROUND IMAGE:
+    // Revoke temporary object URLs when replaced or when this page unmounts.
+    useEffect(() => {
+        return () => {
+            if (canvasBackgroundImage) {
+                URL.revokeObjectURL(canvasBackgroundImage);
+            }
+        };
+    }, [canvasBackgroundImage]);
+
+    // Keep selected element valid.
     useEffect(() => {
         if (template.elements.length === 0) {
             if (selectedId) setSelectedId("");
@@ -401,6 +418,7 @@ export default function CardTemplateSettings() {
             ...current,
             [key]: value,
         }));
+
         setError("");
         setNotice("");
     }, []);
@@ -449,6 +467,38 @@ export default function CardTemplateSettings() {
                 ),
             })),
         }));
+    }, []);
+
+    // BACKGROUND IMAGE:
+    // Uploading a background only updates this temporary state.
+    // It does not update template.width, template.height, or template.elements.
+    const handleCanvasBackgroundUpload = useCallback((event) => {
+        const file = event.target.files?.[0];
+
+        if (!file) return;
+
+        if (!file.type.startsWith("image/")) {
+            setError("يرجى اختيار ملف صورة صحيح.");
+            event.target.value = "";
+            return;
+        }
+
+        const imageUrl = URL.createObjectURL(file);
+
+        setCanvasBackgroundImage(imageUrl);
+        setError("");
+        setNotice("");
+
+        // Allows selecting the same image again.
+        event.target.value = "";
+    }, []);
+
+    // BACKGROUND IMAGE:
+    // Remove the temporary image and restore the white preview background.
+    const removeCanvasBackground = useCallback(() => {
+        setCanvasBackgroundImage("");
+        setError("");
+        setNotice("تمت إزالة صورة الخلفية.");
     }, []);
 
     const addElement = useCallback((type) => {
@@ -517,6 +567,7 @@ export default function CardTemplateSettings() {
         }),
         [template]
     );
+
     const handleEditTemplate = (savedTemplate) => {
         if (!canCreateDesign || busy) return;
 
@@ -529,7 +580,7 @@ export default function CardTemplateSettings() {
 
         const elements = (design.elements ?? []).map((element) => ({
             ...element,
-            id: crypto.randomUUID(),
+            id: createId(),
         }));
 
         setTemplate({
@@ -548,18 +599,71 @@ export default function CardTemplateSettings() {
             elements,
         });
 
+        // Clear the temporary background when loading another saved design.
+        setCanvasBackgroundImage("");
+
         setEditingTemplateId(savedTemplate.id);
         setSelectedSavedTemplateId(String(savedTemplate.id));
 
         setSelectedId(
             elements.find((element) => element.type === "name")?.id ??
-            elements[0]?.id ??
-            ""
+                elements[0]?.id ??
+                ""
         );
 
         setError("");
         setNotice(`أنت تعدّل التصميم: ${savedTemplate.name}`);
     };
+
+    const loadSavedTemplates = useCallback(async () => {
+        setTemplatesLoading(true);
+        setTemplatesError("");
+
+        try {
+            const result = await sendHttpReq(TEMPLATES_ENDPOINT);
+
+            const records = Array.isArray(result)
+                ? result
+                : result?.templates ??
+                  result?.data?.templates ??
+                  result?.data ??
+                  [];
+
+            if (!Array.isArray(records)) {
+                throw new Error("صيغة بيانات التصميمات غير صحيحة.");
+            }
+
+            const normalized = records.map(normalizeDesign);
+
+            setSavedTemplates(normalized);
+
+            setSelectedSavedTemplateId((currentId) => {
+                const stillExists = normalized.some(
+                    (item) => String(item.id) === String(currentId)
+                );
+
+                return stillExists ? currentId : "";
+            });
+
+            return normalized;
+        } catch (err) {
+            console.error("Load templates error:", err);
+
+            setTemplatesError(
+                getErrorMessage(err, "تعذر تحميل التصميمات المحفوظة.")
+            );
+
+            setSavedTemplates([]);
+            throw err;
+        } finally {
+            setTemplatesLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadSavedTemplates().catch(() => {});
+    }, [loadSavedTemplates]);
+
     const handleDeleteTemplate = async () => {
         if (!canDeleteDesign || !selectedSavedTemplate || busy) return;
 
@@ -599,6 +703,7 @@ export default function CardTemplateSettings() {
                 setTemplate(cloneDefaultTemplate());
                 setEditingTemplateId(null);
                 setSelectedId("");
+                setCanvasBackgroundImage("");
             }
 
             setNotice("تم حذف التصميم بنجاح.");
@@ -609,6 +714,7 @@ export default function CardTemplateSettings() {
             setBusy(false);
         }
     };
+
     const saveTemplate = async () => {
         if (!canCreateDesign || busy) return;
 
@@ -659,6 +765,7 @@ export default function CardTemplateSettings() {
             }
         } catch (err) {
             console.error("Save template error:", err);
+
             setError(
                 getErrorMessage(
                     err,
@@ -733,15 +840,15 @@ export default function CardTemplateSettings() {
             if (result?.success === false || result?.error) {
                 throw new Error(
                     result?.message ??
-                    result?.error ??
-                    "تعذر جلب بيانات الموظف."
+                        result?.error ??
+                        "تعذر جلب بيانات الموظف."
                 );
             }
 
             if (!coordinator || coordinator.code == null) {
                 throw new Error(
                     result?.message ??
-                    "لم يتم العثور على المندوب أو المنسق بهذا الكود."
+                        "لم يتم العثور على المندوب أو المنسق بهذا الكود."
                 );
             }
 
@@ -801,6 +908,7 @@ export default function CardTemplateSettings() {
 
         const handleAfterPrint = async () => {
             if (afterPrintHandled) return;
+
             afterPrintHandled = true;
 
             if (fallbackTimerRef.current) {
@@ -826,10 +934,6 @@ export default function CardTemplateSettings() {
                     return;
                 }
 
-                // code = coordinator code being printed.
-                // type = selected print type.
-                // The logged-in user's code is obtained by the backend
-                // from req.user.code, not from this request body.
                 await sendHttpReq(PRINT_LOG_ENDPOINT, "POST", {
                     code: String(printCoordinator.code),
                     name: String(printCoordinator.name ?? ""),
@@ -874,7 +978,6 @@ export default function CardTemplateSettings() {
             printContainer = document.createElement("div");
             printContainer.id = "temporary-coordinator-print";
 
-
             Object.assign(printContainer.style, {
                 display: "none",
                 position: "fixed",
@@ -887,7 +990,6 @@ export default function CardTemplateSettings() {
                 overflow: "hidden",
                 background: "#ffffff",
             });
-
 
             const cardClone = sourceCard.cloneNode(true);
 
@@ -918,6 +1020,7 @@ export default function CardTemplateSettings() {
                                 img.addEventListener("load", resolve, {
                                     once: true,
                                 });
+
                                 img.addEventListener("error", resolve, {
                                     once: true,
                                 });
@@ -929,7 +1032,7 @@ export default function CardTemplateSettings() {
                             img.naturalWidth > 0 &&
                             typeof img.decode === "function"
                         ) {
-                            await img.decode().catch(() => { });
+                            await img.decode().catch(() => {});
                         }
                     })
                 ),
@@ -963,11 +1066,13 @@ export default function CardTemplateSettings() {
             window.print();
         } catch (err) {
             cleanup();
+
             setPrintError(
                 getErrorMessage(err, "تعذر تجهيز البطاقة للطباعة.")
             );
         }
     };
+
     const openPrintModal = async () => {
         if (!canPrintCard || printBusy || templatesLoading) return;
 
@@ -990,7 +1095,7 @@ export default function CardTemplateSettings() {
         }
     };
 
-    // Drag the selected element.
+    // Drag selected element.
     useEffect(() => {
         if (!drag) return undefined;
 
@@ -1037,13 +1142,14 @@ export default function CardTemplateSettings() {
         };
     }, [drag, template.width, template.height]);
 
-    // Resize the canvas.
+    // Resize canvas.
     useEffect(() => {
         if (!canvasResize) return undefined;
 
         const handleMouseMove = (event) => {
             const deltaX =
                 (event.clientX - canvasResize.startX) / canvasResize.scale;
+
             const deltaY =
                 (event.clientY - canvasResize.startY) / canvasResize.scale;
 
@@ -1051,23 +1157,27 @@ export default function CardTemplateSettings() {
                 const width =
                     canvasResize.axis === "width"
                         ? Math.max(
-                            100,
-                            Math.min(
-                                3000,
-                                Math.round(canvasResize.startWidth + deltaX)
-                            )
-                        )
+                              100,
+                              Math.min(
+                                  3000,
+                                  Math.round(
+                                      canvasResize.startWidth + deltaX
+                                  )
+                              )
+                          )
                         : current.width;
 
                 const height =
                     canvasResize.axis === "height"
                         ? Math.max(
-                            100,
-                            Math.min(
-                                3000,
-                                Math.round(canvasResize.startHeight + deltaY)
-                            )
-                        )
+                              100,
+                              Math.min(
+                                  3000,
+                                  Math.round(
+                                      canvasResize.startHeight + deltaY
+                                  )
+                              )
+                          )
                         : current.height;
 
                 return {
@@ -1106,7 +1216,7 @@ export default function CardTemplateSettings() {
         };
     }, [canvasResize]);
 
-    // Move the selected element using the keyboard.
+    // Move selected element with keyboard.
     useEffect(() => {
         const handleKeyDown = (event) => {
             const arrowKeys = [
@@ -1184,7 +1294,7 @@ export default function CardTemplateSettings() {
         };
     }, [selectedId, template.elements, drag, canvasResize]);
 
-    // Clean up temporary print resources if this page unmounts.
+    // Clean up temporary print resources when this page unmounts.
     useEffect(() => {
         return () => {
             if (fallbackTimerRef.current) {
@@ -1205,51 +1315,7 @@ export default function CardTemplateSettings() {
     }, []);
 
     const previewScale = Math.min(1, 800 / template.width);
-    const loadSavedTemplates = useCallback(async () => {
-        setTemplatesLoading(true);
-        setTemplatesError("");
 
-        try {
-            const result = await sendHttpReq(TEMPLATES_ENDPOINT);
-
-            const records = Array.isArray(result)
-                ? result
-                : result?.templates ??
-                result?.data?.templates ??
-                result?.data ??
-                [];
-
-            if (!Array.isArray(records)) {
-                throw new Error("صيغة بيانات التصميمات غير صحيحة.");
-            }
-
-            const normalized = records.map(normalizeDesign);
-
-            setSavedTemplates(normalized);
-
-            setSelectedSavedTemplateId((currentId) => {
-                const stillExists = normalized.some(
-                    (item) => String(item.id) === String(currentId)
-                );
-
-                return stillExists ? currentId : "";
-            });
-
-            return normalized;
-        } catch (err) {
-            console.error("Load templates error:", err);
-            setTemplatesError(
-                getErrorMessage(err, "تعذر تحميل التصميمات المحفوظة.")
-            );
-            setSavedTemplates([]);
-            throw err;
-        } finally {
-            setTemplatesLoading(false);
-        }
-    }, []);
-    useEffect(() => {
-        loadSavedTemplates().catch(() => { });
-    }, [loadSavedTemplates]);
     return (
         <div className="min-h-screen bg-slate-100">
             <div className="sticky top-0 z-40">
@@ -1289,6 +1355,7 @@ export default function CardTemplateSettings() {
                                 setTemplate(cloneDefaultTemplate());
                                 setEditingTemplateId(null);
                                 setSelectedId("");
+                                setCanvasBackgroundImage("");
                                 setError("");
                                 setNotice("تم بدء تصميم جديد.");
                             }}
@@ -1298,6 +1365,7 @@ export default function CardTemplateSettings() {
                         </button>
                     </div>
                 )}
+
                 <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
                     <div className="min-w-0 space-y-5">
                         <CanvasSettings
@@ -1305,6 +1373,13 @@ export default function CardTemplateSettings() {
                             updateTemplate={updateTemplate}
                             updateSpacing={updateSpacing}
                             changeOrientation={changeOrientation}
+                            canvasBackgroundImage={canvasBackgroundImage}
+                            onCanvasBackgroundUpload={
+                                handleCanvasBackgroundUpload
+                            }
+                            onRemoveCanvasBackground={
+                                removeCanvasBackground
+                            }
                         />
 
                         <CardPreview
@@ -1315,6 +1390,7 @@ export default function CardTemplateSettings() {
                             drag={drag}
                             setDrag={setDrag}
                             setCanvasResize={setCanvasResize}
+                            canvasBackgroundImage={canvasBackgroundImage}
                         />
                     </div>
 
@@ -1400,58 +1476,82 @@ export default function CardTemplateSettings() {
                                         اختر تصميم البطاقة المحفوظ
                                     </h3>
 
-
-
-
                                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                        {savedTemplates.map((savedTemplate, index) => {
-                                            const scale = Math.min(
-                                                220 / savedTemplate.design.canvas.width,
-                                                150 / savedTemplate.design.canvas.height
-                                            );
+                                        {savedTemplates.map(
+                                            (savedTemplate, index) => {
+                                                const scale = Math.min(
+                                                    220 /
+                                                        savedTemplate.design
+                                                            .canvas.width,
+                                                    150 /
+                                                        savedTemplate.design
+                                                            .canvas.height
+                                                );
 
-                                            return (
-                                                <div
-                                                    key={savedTemplate.id ?? `${savedTemplate.name}-${index}`}
-                                                    className="rounded-xl border border-slate-200 p-4 text-right transition hover:border-orange-500 hover:bg-orange-50"
-                                                >
-                                                    {/* Template preview */}
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => selectPrintTemplate(savedTemplate)}
-                                                        className="w-full text-right"
+                                                return (
+                                                    <div
+                                                        key={
+                                                            savedTemplate.id ??
+                                                            `${savedTemplate.name}-${index}`
+                                                        }
+                                                        className="rounded-xl border border-slate-200 p-4 text-right transition hover:border-orange-500 hover:bg-orange-50"
                                                     >
-                                                        <div className="mb-3 flex aspect-4/3 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
-                                                            <div
-                                                                style={{
-                                                                    transform: `scale(${scale})`,
-                                                                    transformOrigin: "center",
-                                                                    flexShrink: 0,
-                                                                }}
-                                                            >
-                                                                <CardArtwork
-                                                                    design={savedTemplate.design}
-                                                                    coordinator={null}
-                                                                />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                selectPrintTemplate(
+                                                                    savedTemplate
+                                                                )
+                                                            }
+                                                            className="w-full text-right"
+                                                        >
+                                                            <div className="mb-3 flex aspect-4/3 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
+                                                                <div
+                                                                    style={{
+                                                                        transform: `scale(${scale})`,
+                                                                        transformOrigin:
+                                                                            "center",
+                                                                        flexShrink: 0,
+                                                                    }}
+                                                                >
+                                                                    <CardArtwork
+                                                                        design={
+                                                                            savedTemplate.design
+                                                                        }
+                                                                        coordinator={
+                                                                            null
+                                                                        }
+                                                                    />
+                                                                </div>
                                                             </div>
-                                                        </div>
 
-                                                        <p className="font-semibold text-slate-800">
-                                                            {savedTemplate.name}
-                                                        </p>
+                                                            <p className="font-semibold text-slate-800">
+                                                                {
+                                                                    savedTemplate.name
+                                                                }
+                                                            </p>
 
-                                                        <p className="mt-1 text-sm text-slate-500">
-                                                            {savedTemplate.design.canvas.width} ×{" "}
-                                                            {savedTemplate.design.canvas.height}
-                                                        </p>
-                                                    </button>
-
-
-                                                </div>
-                                            );
-                                        })}
+                                                            <p className="mt-1 text-sm text-slate-500">
+                                                                {
+                                                                    savedTemplate
+                                                                        .design
+                                                                        .canvas
+                                                                        .width
+                                                                }{" "}
+                                                                ×{" "}
+                                                                {
+                                                                    savedTemplate
+                                                                        .design
+                                                                        .canvas
+                                                                        .height
+                                                                }
+                                                            </p>
+                                                        </button>
+                                                    </div>
+                                                );
+                                            }
+                                        )}
                                     </div>
-
                                 </div>
                             )}
 
@@ -1465,6 +1565,7 @@ export default function CardTemplateSettings() {
                                             التصميم المختار:{" "}
                                             {selectedPrintTemplate.name}
                                         </p>
+
                                         <p className="mt-1 text-sm text-slate-600">
                                             أدخل كود المندوب أو المنسق لعرض
                                             البطاقة ببياناته.
@@ -1526,6 +1627,7 @@ export default function CardTemplateSettings() {
                                                 <p className="font-bold text-slate-800">
                                                     {printCoordinator.name}
                                                 </p>
+
                                                 <p className="mt-1 text-sm text-slate-600">
                                                     الكود:{" "}
                                                     {printCoordinator.code}
@@ -1533,6 +1635,7 @@ export default function CardTemplateSettings() {
                                                         ? ` — ${printCoordinator.job}`
                                                         : ""}
                                                 </p>
+
                                                 <p className="mt-1 text-sm text-slate-500">
                                                     التصميم:{" "}
                                                     {selectedPrintTemplate.name}
@@ -1553,7 +1656,6 @@ export default function CardTemplateSettings() {
                                             </button>
                                         </div>
 
-                                        {/* Select the type of card being printed. */}
                                         <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
                                             <label
                                                 htmlFor="print-type"
@@ -1592,30 +1694,33 @@ export default function CardTemplateSettings() {
                                         <div className="overflow-auto rounded-xl border bg-slate-100 p-4">
                                             <div
                                                 className="mx-auto"
-                                                style={{ width: "fit-content" }}
+                                                style={{
+                                                    width: "fit-content",
+                                                }}
                                             >
                                                 <div
                                                     style={{
                                                         transform: `scale(${Math.min(
                                                             1,
                                                             800 /
-                                                            printDesign
-                                                                .canvas
-                                                                .width
-                                                        )})`,
-                                                        transformOrigin:
-                                                            "top center",
-                                                        marginBottom: `${printDesign.canvas
-                                                            .height *
-                                                            (Math.min(
-                                                                1,
-                                                                800 /
                                                                 printDesign
                                                                     .canvas
                                                                     .width
+                                                        )})`,
+                                                        transformOrigin:
+                                                            "top center",
+                                                        marginBottom: `${
+                                                            printDesign.canvas
+                                                                .height *
+                                                            (Math.min(
+                                                                1,
+                                                                800 /
+                                                                    printDesign
+                                                                        .canvas
+                                                                        .width
                                                             ) -
                                                                 1)
-                                                            }px`,
+                                                        }px`,
                                                     }}
                                                 >
                                                     <CardArtwork
