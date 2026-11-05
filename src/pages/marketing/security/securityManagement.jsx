@@ -568,7 +568,7 @@ export default function SecurityManagement() {
                     </div>
 
                     <div className="overflow-x-auto">
-                        <table className="w-full min-w-[1400px] text-right text-sm">
+                        <table className="w-full min-w-350 text-right text-sm">
                             <thead className="bg-orange-50 text-gray-700">
                                 <tr>
                                     {[
@@ -657,7 +657,7 @@ export default function SecurityManagement() {
                                                 </span>
                                             </td>
 
-                                            <td className="max-w-[180px] truncate px-4 py-3">
+                                            <td className="max-w-45 truncate px-4 py-3">
                                                 {item.notes || "-"}
                                             </td>
 

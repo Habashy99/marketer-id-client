@@ -210,7 +210,7 @@ function ImageCropModal({
 
     return (
         <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
+            className="fixed inset-0 z-100 flex items-center justify-center bg-black/70 p-4"
             onClick={processing ? undefined : onCancel}
         >
             <div
@@ -222,7 +222,7 @@ function ImageCropModal({
                     قص الصورة قبل الرفع
                 </h3>
 
-                <div className="relative h-[350px] w-full overflow-hidden rounded-lg bg-gray-900">
+                <div className="relative h-87.5 w-full overflow-hidden rounded-lg bg-gray-900">
                     <Cropper
                         image={imageUrl}
                         crop={crop}

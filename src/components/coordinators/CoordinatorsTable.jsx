@@ -101,7 +101,7 @@ export default function CoordinatorsTable({
                                 </td>
 
                                 <td className="p-3">
-                                    {coordinator.supplier_name  ?? "—"}
+                                    {coordinator.supplier_name ?? "—"}
                                 </td>
 
                                 <td className="whitespace-nowrap p-3">
@@ -209,11 +209,25 @@ export default function CoordinatorsTable({
                                     {canPrintCard && (
                                         <button
                                             type="button"
+                                            disabled={
+                                                String(coordinator.security_situation ?? "").trim() !==
+                                                "سليم"
+                                            }
                                             onClick={(event) => {
                                                 event.stopPropagation();
                                                 onPrintCoordinator?.(coordinator);
                                             }}
-                                            className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+                                            className={`rounded-lg px-4 py-2 text-white ${String(coordinator.security_situation ?? "").trim() ===
+                                                    "سليم"
+                                                    ? "bg-blue-600 hover:bg-blue-700"
+                                                    : "cursor-not-allowed bg-gray-400 opacity-60"
+                                                }`}
+                                            title={
+                                                String(coordinator.security_situation ?? "").trim() !==
+                                                    "سليم"
+                                                    ? "لا يمكن طباعة الكارت بسبب الموقف الأمني"
+                                                    : "طباعة الكارت"
+                                            }
                                         >
                                             طباعة كارت
                                         </button>
