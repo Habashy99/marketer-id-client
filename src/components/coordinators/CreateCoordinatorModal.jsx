@@ -1,6 +1,9 @@
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Cropper from "react-easy-crop";
 import SearchableSelect from "../SearchableSelect";
+
+import { API_BASE_URL } from "../../lib/apiBase.js";
 
 const INITIAL_FORM = {
     code: "",
@@ -302,6 +305,10 @@ export default function CreateCoordinatorModal({
     const [error, setError] = useState("");
     const [pendingPhoto, setPendingPhoto] = useState(null);
 
+    // Security check state
+    const [securityCheck, setSecurityCheck] = useState(null);
+    const [checkingSecurity, setCheckingSecurity] = useState(false);
+
     const branchOptions = useMemo(
         () =>
             branches.map((branch) => ({
@@ -340,6 +347,74 @@ export default function CreateCoordinatorModal({
 
             return updatedForm;
         });
+    }
+
+    /* --------------------------- Security check ---------------------------- */
+
+    async function checkNationalId(value) {
+        const nationalId = String(value || "").trim();
+
+        setSecurityCheck(null);
+
+        if (!nationalId) {
+            return { success: true, exists: false };
+        }
+
+        if (!/^\d{14}$/.test(nationalId)) {
+            const result = {
+                success: false,
+                error: "الرقم القومي يجب أن يتكون من 14 رقمًا.",
+            };
+
+            setSecurityCheck(result);
+            return result;
+        }
+
+        try {
+            setCheckingSecurity(true);
+
+            const response = await fetch(
+                `${API_BASE_URL}/security/check-national-id/${encodeURIComponent(nationalId)}`,
+                {
+                    method: "GET",
+                    credentials: "include",
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    data.message || "فشل التحقق من الرقم القومي."
+                );
+            }
+
+            const result = {
+                ...data,
+                national_id_number: nationalId,
+            };
+
+            setSecurityCheck(result);
+            return result;
+        } catch (err) {
+            const result = {
+                success: false,
+                error: err.message || "تعذر التحقق من الرقم القومي.",
+                national_id_number: nationalId,
+            };
+
+            setSecurityCheck(result);
+            return result;
+        } finally {
+            setCheckingSecurity(false);
+        }
+    }
+
+    function handleNationalIdChange(value) {
+        const nationalId = value.replace(/\D/g, "").slice(0, 14);
+
+        updateField("national_id_number", nationalId);
+        setSecurityCheck(null);
     }
 
     /* ----------------------------- Photo upload ---------------------------- */
@@ -406,6 +481,28 @@ export default function CreateCoordinatorModal({
             return;
         }
 
+        // Verify the national ID again before saving.
+        if (form.national_id_number.trim()) {
+            const result = await checkNationalId(
+                form.national_id_number
+            );
+
+            if (!result.success) {
+                setError(
+                    result.error ||
+                    "تعذر التحقق من الرقم القومي. حاول مرة أخرى."
+                );
+                return;
+            }
+
+            if (result.blocked) {
+                setError(
+                    "لا يمكن إضافة هذا الشخص لأنه مسجل بحالة بلوك في إدارة الأمن."
+                );
+                return;
+            }
+        }
+
         try {
             const formData = new FormData();
 
@@ -441,6 +538,7 @@ export default function CreateCoordinatorModal({
             setForm({ ...INITIAL_FORM });
             setPhotos({ ...INITIAL_PHOTOS });
             setPendingPhoto(null);
+            setSecurityCheck(null);
             setError("");
         } catch (err) {
             setError(err.message || "فشل إنشاء المنسق.");
@@ -488,24 +586,84 @@ export default function CreateCoordinatorModal({
                                     {field.label}
                                 </label>
 
-                                <input
-                                    type={field.type || "text"}
-                                    required={Boolean(field.required)}
-                                    min={
-                                        field.type === "number"
-                                            ? 0
-                                            : undefined
-                                    }
-                                    value={form[field.key] ?? ""}
-                                    disabled={saving}
-                                    onChange={(event) =>
-                                        updateField(
-                                            field.key,
-                                            event.target.value
-                                        )
-                                    }
-                                    className={inputClasses}
-                                />
+                                {field.key === "national_id_number" ? (
+                                    <>
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            maxLength={14}
+                                            value={form.national_id_number}
+                                            disabled={saving}
+                                            onChange={(event) =>
+                                                handleNationalIdChange(
+                                                    event.target.value
+                                                )
+                                            }
+                                            onBlur={(event) =>
+                                                checkNationalId(
+                                                    event.target.value
+                                                )
+                                            }
+                                            className={inputClasses}
+                                            placeholder="أدخل الرقم القومي المكون من 14 رقمًا"
+                                        />
+
+                                        {checkingSecurity && (
+                                            <p className="mt-2 text-sm text-gray-500">
+                                                جاري التحقق من الرقم القومي...
+                                            </p>
+                                        )}
+
+                                        {securityCheck?.blocked && (
+                                            <div className="mt-2 rounded-lg border border-red-300 bg-red-50 p-3 text-red-700">
+                                                <p className="font-bold">
+                                                    هذا الشخص مسجل بحالة بلوك في إدارة الأمن!
+                                                </p>
+
+                                                {securityCheck.notes && (
+                                                    <p className="mt-1 text-sm">
+                                                        الملاحظات: {securityCheck.notes}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {securityCheck?.exists &&
+                                            !securityCheck.blocked && (
+                                                <div className="mt-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
+                                                    هذا الشخص مسجل في إدارة الأمن، وحالته:{" "}
+                                                    <strong>
+                                                        {securityCheck.security_status}
+                                                    </strong>
+                                                </div>
+                                            )}
+
+                                        {securityCheck?.error && (
+                                            <p className="mt-2 text-sm text-red-600">
+                                                {securityCheck.error}
+                                            </p>
+                                        )}
+                                    </>
+                                ) : (
+                                    <input
+                                        type={field.type || "text"}
+                                        required={Boolean(field.required)}
+                                        min={
+                                            field.type === "number"
+                                                ? 0
+                                                : undefined
+                                        }
+                                        value={form[field.key] ?? ""}
+                                        disabled={saving}
+                                        onChange={(event) =>
+                                            updateField(
+                                                field.key,
+                                                event.target.value
+                                            )
+                                        }
+                                        className={inputClasses}
+                                    />
+                                )}
                             </div>
                         ))}
 
@@ -729,10 +887,19 @@ export default function CreateCoordinatorModal({
                     <div className="mt-5 flex gap-2">
                         <button
                             type="submit"
-                            disabled={saving || Boolean(pendingPhoto)}
+                            disabled={
+   saving ||
+    checkingSecurity ||
+    Boolean(pendingPhoto) ||
+    Boolean(securityCheck?.blocked)
+                            }
                             className="rounded-lg bg-orange-600 px-5 py-2.5 text-white hover:bg-orange-700 disabled:opacity-50"
                         >
-                            {saving ? "جاري الحفظ..." : "حفظ المنسق"}
+                            {saving
+                                ? "جاري الحفظ..."
+                                : checkingSecurity
+                                    ? "جاري التحقق..."
+                                    : "حفظ المنسق"}
                         </button>
 
                         <button
