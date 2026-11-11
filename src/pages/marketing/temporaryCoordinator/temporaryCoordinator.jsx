@@ -71,20 +71,30 @@ function TemporaryCoordinators() {
     // ==========================================
 
     const fetchCoordinators = useCallback(async () => {
-        if (!canViewTemporaryCoordinators) return;
+        if (!canViewTemporaryCoordinators) {
+            setLoading(false);
+            return;
+        }
 
         try {
+            setLoading(true);
+
             const response = await sendHttpReq("temporary-coordinators");
 
             if (!response) {
                 throw new Error("لم يتم استلام بيانات من السيرفر.");
             }
 
-            setCoordinators(response.coordinators ?? response.records ?? []);
+            setCoordinators(
+                response.coordinators ?? response.records ?? []
+            );
+
             setError("");
         } catch (err) {
             console.error("Fetch temporary coordinators:", err);
-            setError(err.message || "فشل تحميل بيانات المنسقين المؤقتين.");
+            setError(
+                err.message || "فشل تحميل بيانات المنسقين المؤقتين."
+            );
         } finally {
             setLoading(false);
         }
@@ -96,6 +106,8 @@ function TemporaryCoordinators() {
 
     const fetchCompanies = useCallback(async () => {
         try {
+            setCompaniesLoading(true);
+
             const response = await sendHttpReq("advertising-companies");
 
             if (!response) {
@@ -106,11 +118,39 @@ function TemporaryCoordinators() {
             setCompaniesError("");
         } catch (err) {
             console.error("Fetch advertising companies:", err);
-            setCompaniesError(err.message || "فشل تحميل الشركات الإعلانية.");
+            setCompaniesError(
+                err.message || "فشل تحميل الشركات الإعلانية."
+            );
         } finally {
             setCompaniesLoading(false);
         }
     }, []);
+
+    // ==========================================
+    // SECURITY STATUS
+    // ==========================================
+
+    const getSecurityStatus = (coordinator) => {
+        return (
+            coordinator.Security_Situation ??
+            coordinator.security_situation ??
+            coordinator.securitySituation ??
+            coordinator.security_status ??
+            "غير محدد"
+        );
+    };
+
+    const getSecurityStatusClass = (status) => {
+        const classes = {
+            "سليم": "bg-green-100 text-green-700",
+            "تحت المراجعة": "bg-yellow-100 text-yellow-700",
+            "مرفوض": "bg-red-100 text-red-700",
+            "بلوك": "bg-red-100 text-red-700",
+            "غير محدد": "bg-gray-100 text-gray-600",
+        };
+
+        return classes[status] ?? "bg-gray-100 text-gray-600";
+    };
 
     // ==========================================
     // FILTER COORDINATORS
@@ -168,8 +208,6 @@ function TemporaryCoordinators() {
     useEffect(() => {
         if (!user) return undefined;
 
-        // Defer the requests so this effect does not synchronously trigger
-        // state updates through fetchCoordinators/fetchCompanies.
         let cancelled = false;
 
         const startInitialFetch = async () => {
@@ -181,6 +219,8 @@ function TemporaryCoordinators() {
 
             if (canViewTemporaryCoordinators) {
                 requests.push(fetchCoordinators());
+            } else {
+                setLoading(false);
             }
 
             if (
@@ -188,6 +228,8 @@ function TemporaryCoordinators() {
                 canCreateAdvertisingCompany
             ) {
                 requests.push(fetchCompanies());
+            } else {
+                setCompaniesLoading(false);
             }
 
             await Promise.all(requests);
@@ -772,12 +814,13 @@ function TemporaryCoordinators() {
                                                         "الشركة الأم",
                                                         "الشركة الإعلانية",
                                                         "الرقم القومي",
+                                                        "الموقف الأمني",
                                                         "الفرع",
                                                         "من تاريخ",
                                                         "إلى تاريخ",
                                                         "الملاحظات",
                                                         ...(canEditTemporaryCoordinator ||
-                                                            canDeleteTemporaryCoordinator
+                                                        canDeleteTemporaryCoordinator
                                                             ? ["الإجراءات"]
                                                             : []),
                                                     ].map((heading) => (
@@ -793,55 +836,69 @@ function TemporaryCoordinators() {
 
                                             <tbody className="divide-y divide-gray-100">
                                                 {filteredCoordinators.map(
-                                                    (coordinator, index) => (
-                                                        <tr
-                                                            key={coordinator.id}
-                                                            className="transition hover:bg-orange-50"
-                                                        >
-                                                            <td className="whitespace-nowrap px-4 py-4">
-                                                                {index + 1}
-                                                            </td>
+                                                    (coordinator, index) => {
+                                                        const securityStatus =
+                                                            getSecurityStatus(coordinator);
 
-                                                            <td className="whitespace-nowrap px-4 py-4 font-semibold text-gray-800">
-                                                                {coordinator.name ?? "-"}
-                                                            </td>
+                                                        return (
+                                                            <tr
+                                                                key={coordinator.id}
+                                                                className="transition hover:bg-orange-50"
+                                                            >
+                                                                <td className="whitespace-nowrap px-4 py-4">
+                                                                    {index + 1}
+                                                                </td>
 
-                                                            <td className="whitespace-nowrap px-4 py-4">
-                                                                {coordinator.mother_company_name ??
-                                                                    coordinator.mother_company ??
-                                                                    "-"}
-                                                            </td>
+                                                                <td className="whitespace-nowrap px-4 py-4 font-semibold text-gray-800">
+                                                                    {coordinator.name ?? "-"}
+                                                                </td>
 
-                                                            <td className="whitespace-nowrap px-4 py-4">
-                                                                {coordinator.advertising_company_name ??
-                                                                    coordinator.advertising_company ??
-                                                                    "-"}
-                                                            </td>
+                                                                <td className="whitespace-nowrap px-4 py-4">
+                                                                    {coordinator.mother_company_name ??
+                                                                        coordinator.mother_company ??
+                                                                        "-"}
+                                                                </td>
 
-                                                            <td className="whitespace-nowrap px-4 py-4">
-                                                                {coordinator.national_id_number ?? "-"}
-                                                            </td>
+                                                                <td className="whitespace-nowrap px-4 py-4">
+                                                                    {coordinator.advertising_company_name ??
+                                                                        coordinator.advertising_company ??
+                                                                        "-"}
+                                                                </td>
 
-                                                            <td className="whitespace-nowrap px-4 py-4">
-                                                                {coordinator.branch_name ??
-                                                                    coordinator.branch ??
-                                                                    "-"}
-                                                            </td>
+                                                                <td className="whitespace-nowrap px-4 py-4">
+                                                                    {coordinator.national_id_number ?? "-"}
+                                                                </td>
 
-                                                            <td className="whitespace-nowrap px-4 py-4">
-                                                                {formatDate(coordinator.from_date)}
-                                                            </td>
+                                                                <td className="whitespace-nowrap px-4 py-4">
+                                                                    <span
+                                                                        className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${getSecurityStatusClass(
+                                                                            securityStatus
+                                                                        )}`}
+                                                                    >
+                                                                        {securityStatus}
+                                                                    </span>
+                                                                </td>
 
-                                                            <td className="whitespace-nowrap px-4 py-4">
-                                                                {formatDate(coordinator.to_date)}
-                                                            </td>
+                                                                <td className="whitespace-nowrap px-4 py-4">
+                                                                    {coordinator.branch_name ??
+                                                                        coordinator.branch ??
+                                                                        "-"}
+                                                                </td>
 
-                                                            <td className="min-w-40 px-4 py-4">
-                                                                {coordinator.notes || "-"}
-                                                            </td>
+                                                                <td className="whitespace-nowrap px-4 py-4">
+                                                                    {formatDate(coordinator.from_date)}
+                                                                </td>
 
-                                                            {(canEditTemporaryCoordinator ||
-                                                                canDeleteTemporaryCoordinator) && (
+                                                                <td className="whitespace-nowrap px-4 py-4">
+                                                                    {formatDate(coordinator.to_date)}
+                                                                </td>
+
+                                                                <td className="min-w-40 px-4 py-4">
+                                                                    {coordinator.notes || "-"}
+                                                                </td>
+
+                                                                {(canEditTemporaryCoordinator ||
+                                                                    canDeleteTemporaryCoordinator) && (
                                                                     <td className="whitespace-nowrap px-4 py-4">
                                                                         <div className="flex items-center gap-2">
                                                                             {canEditTemporaryCoordinator && (
@@ -875,8 +932,9 @@ function TemporaryCoordinators() {
                                                                         </div>
                                                                     </td>
                                                                 )}
-                                                        </tr>
-                                                    )
+                                                            </tr>
+                                                        );
+                                                    }
                                                 )}
                                             </tbody>
                                         </table>

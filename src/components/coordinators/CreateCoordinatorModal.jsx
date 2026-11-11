@@ -633,29 +633,6 @@ export default function CreateCoordinatorModal({
                             </select>
                         </div>
 
-                        {/* Security situation */}
-                        <div>
-                            <label className="mb-1 block text-sm font-semibold">
-                                الموقف الأمني
-                            </label>
-
-                            <select
-                                value={form.security_situation}
-                                disabled={saving}
-                                onChange={(event) =>
-                                    updateField(
-                                        "security_situation",
-                                        event.target.value
-                                    )
-                                }
-                                className={inputClasses}
-                            >
-                                <option value="">اختر الموقف الأمني</option>
-                                <option value="سليم">سليم</option>
-                                <option value="غير سليم">غير سليم</option>
-                            </select>
-                        </div>
-
                         {/* Email discount */}
                         <div>
                             <label className="mb-1 block text-sm font-semibold">
