@@ -1532,7 +1532,7 @@ export default function SecurityManagement() {
                         key={recordKey}
                         className="transition hover:bg-gray-50"
                       >
-                        <td className="sticky right-0 z-[1] whitespace-nowrap bg-white px-4 py-3">
+                        <td className="sticky right-0 z-1 whitespace-nowrap bg-white px-4 py-3">
                           {canEditSecurity && (
                             <button
                               type="button"
@@ -1687,7 +1687,7 @@ export default function SecurityManagement() {
       {/* ------------------------------------------------------------------ */}
 
       {coordinatorModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-3 sm:p-5">
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-3 sm:p-5">
           <div className="flex max-h-[94vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
             {/* Header */}
 
@@ -1741,7 +1741,7 @@ export default function SecurityManagement() {
                 value={coordinatorSearch}
                 onChange={(event) => setCoordinatorSearch(event.target.value)}
                 placeholder="بحث بالاسم أو الرقم القومي أو الوظيفة..."
-                className="min-w-[220px] flex-1 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
+                className="min-w-55 flex-1 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
               />
 
               <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -1767,7 +1767,7 @@ export default function SecurityManagement() {
                   لا توجد سجلات منسقين للمراجعة.
                 </div>
               ) : (
-                <table className="w-full min-w-[1150px] text-right text-sm">
+                <table className="w-full min-w-287.5 text-right text-sm">
                   <thead className="sticky top-0 z-10 bg-blue-50 text-gray-700">
                     <tr>
                       <th className="whitespace-nowrap px-3 py-3">
@@ -1807,9 +1807,9 @@ export default function SecurityManagement() {
 
                       <th className="whitespace-nowrap px-3 py-3">الفرع</th>
 
-                      <th className="min-w-[180px] px-3 py-3">الموقف الأمني</th>
+                      <th className="min-w-45 px-3 py-3">الموقف الأمني</th>
 
-                      <th className="min-w-[280px] px-3 py-3">ملاحظات جديدة</th>
+                      <th className="min-w-70 px-3 py-3">ملاحظات جديدة</th>
 
                       <th className="whitespace-nowrap px-3 py-3">
                         حالة الاستيراد
@@ -1886,7 +1886,7 @@ export default function SecurityManagement() {
                             </select>
                           </td>
 
-                          <td className="px-3 py-3 min-w-[280px]">
+                          <td className="px-3 py-3 min-w-70">
                             <textarea
                               value={
                                 item.review_notes ??
