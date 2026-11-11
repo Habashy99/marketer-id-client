@@ -1287,7 +1287,7 @@ export default function SecurityManagement() {
 
                     return (
                       <tr key={recordKey} className="transition hover:bg-gray-50">
-                        <td className="sticky right-0 z-[1] whitespace-nowrap bg-white px-4 py-3">
+                        <td className="sticky right-0 z-1 whitespace-nowrap bg-white px-4 py-3">
                           {canEditSecurity && (
                             <button
                               type="button"
@@ -1324,8 +1324,8 @@ export default function SecurityManagement() {
                         <td className="px-4 py-3">{getBranchName(item)}</td>
                         <td className="px-4 py-3">{item.governorate || "-"}</td>
 
-                        <td className="w-[250px] min-w-[250px] px-4 py-3 align-top">
-                          <div className="whitespace-pre-wrap break-words leading-7">
+                        <td className="w-62.5 min-w-62.5 px-4 py-3 align-top">
+                          <div className="whitespace-pre-wrap wrap-break-word leading-7">
                             {item.stolen_goods || "-"}
                           </div>
                         </td>
@@ -1343,9 +1343,9 @@ export default function SecurityManagement() {
                           </span>
                         </td>
 
-                        <td className="w-[350px] min-w-[350px] max-w-[350px] px-4 py-3 align-top">
+                        <td className="w-87.5 min-w-87.5 max-w-87.5 px-4 py-3 align-top">
                           <div
-                            className="whitespace-pre-wrap break-words leading-7"
+                            className="whitespace-pre-wrap wrap-break-word leading-7"
                             title={item.notes || ""}
                           >
                             {item.notes || "-"}
