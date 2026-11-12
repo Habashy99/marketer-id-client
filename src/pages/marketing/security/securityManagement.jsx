@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -42,7 +43,7 @@ const EMPTY_FORM = {
   permit_company_name: "",
   permit_issue_date: "",
   permit_branch: "",
-  file_type: "مناديب/منسقين",
+  file_type: "25",
   security_status: "غير محدد",
   notes: "",
 };
@@ -129,6 +130,48 @@ function getNormalizedFileType(value) {
   }
 
   return "";
+}
+
+/* -------------------------------------------------------------------------- */
+/* Coordinator Source Helpers                                                 */
+/* -------------------------------------------------------------------------- */
+
+// المصدر منفصل تمامًا عن الوظيفة.
+// permanent = أساسي من جدول coordinator.
+// temporary = مؤقت من جدول temporary_coordinator.
+
+function getCoordinatorSourceType(item) {
+  const sourceType = String(item?.source_type ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (sourceType === "temporary") return "temporary";
+  if (sourceType === "permanent") return "permanent";
+
+  return "";
+}
+
+function getCoordinatorSourceLabel(item) {
+  const sourceType = getCoordinatorSourceType(item);
+
+  if (sourceType === "temporary") return "مؤقت";
+  if (sourceType === "permanent") return "أساسي";
+
+  return item?.source_label || "-";
+}
+
+function getCoordinatorSourceStyle(item) {
+  const sourceType = getCoordinatorSourceType(item);
+
+  if (sourceType === "temporary") {
+    return "bg-purple-100 text-purple-700";
+  }
+
+  if (sourceType === "permanent") {
+    return "bg-blue-100 text-blue-700";
+  }
+
+  return "bg-gray-100 text-gray-600";
 }
 
 /* -------------------------------------------------------------------------- */
@@ -563,16 +606,36 @@ export default function SecurityManagement() {
             : [];
 
       setCoordinatorRows(
-        records.map((item) => ({
-          ...item,
-          national_id_number: String(item.national_id_number ?? "").trim(),
-          security_status: getNormalizedStatus(
-            item.security_status ?? item.security_situation ?? "غير محدد",
-          ),
-          notes: item.security_notes ?? item.notes ?? "",
-          review_notes: item.security_notes ?? item.notes ?? "",
-          selected: !item.already_imported && !item.deleted_security_record,
-        })),
+        records.map((item) => {
+          const sourceType = getCoordinatorSourceType(item);
+
+          return {
+            ...item,
+
+            source_type: sourceType,
+            source_label:
+              item.source_label ||
+              (sourceType === "temporary"
+                ? "مؤقت"
+                : sourceType === "permanent"
+                  ? "أساسي"
+                  : "-"),
+
+            national_id_number: String(
+              item.national_id_number ?? "",
+            ).trim(),
+
+            security_status: getNormalizedStatus(
+              item.security_status ?? item.security_situation ?? "غير محدد",
+            ),
+
+            notes: item.security_notes ?? item.notes ?? "",
+            review_notes: item.security_notes ?? item.notes ?? "",
+
+            selected:
+              !item.already_imported && !item.deleted_security_record,
+          };
+        }),
       );
 
       if (records.length === 0) {
@@ -607,8 +670,11 @@ export default function SecurityManagement() {
         item.name,
         item.national_id_number,
         item.job,
+        item.source_type,
+        item.source_label,
         item.company_name,
         item.branch,
+        item.branch_name,
       ].some((field) =>
         String(field ?? "")
           .toLowerCase()
@@ -1740,7 +1806,7 @@ export default function SecurityManagement() {
                 type="search"
                 value={coordinatorSearch}
                 onChange={(event) => setCoordinatorSearch(event.target.value)}
-                placeholder="بحث بالاسم أو الرقم القومي أو الوظيفة..."
+                placeholder="بحث بالاسم أو الرقم القومي أو الوظيفة أو النوع..."
                 className="min-w-55 flex-1 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
               />
 
@@ -1803,6 +1869,10 @@ export default function SecurityManagement() {
 
                       <th className="whitespace-nowrap px-3 py-3">الوظيفة</th>
 
+                      {/* مصدر السجل: أساسي أو مؤقت */}
+
+                      <th className="whitespace-nowrap px-3 py-3">النوع</th>
+
                       <th className="whitespace-nowrap px-3 py-3">الشركة</th>
 
                       <th className="whitespace-nowrap px-3 py-3">الفرع</th>
@@ -1820,10 +1890,11 @@ export default function SecurityManagement() {
                   <tbody className="divide-y divide-gray-100">
                     {filteredCoordinatorRows.map((item) => {
                       const disabled = Boolean(item.deleted_security_record);
+                      const sourceType = getCoordinatorSourceType(item);
 
                       return (
                         <tr
-                          key={item.national_id_number || item.id}
+                          key={`${item.national_id_number || item.id}-${sourceType}`}
                           className={`hover:bg-gray-50 ${
                             !item.selected ? "bg-gray-50" : ""
                           }`}
@@ -1853,6 +1924,16 @@ export default function SecurityManagement() {
 
                           <td className="whitespace-nowrap px-3 py-3">
                             {item.job || "-"}
+                          </td>
+
+                          {/* أساسي / مؤقت */}
+
+                          <td className="whitespace-nowrap px-3 py-3">
+                            <span
+                              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getCoordinatorSourceStyle(item)}`}
+                            >
+                              {getCoordinatorSourceLabel(item)}
+                            </span>
                           </td>
 
                           <td className="whitespace-nowrap px-3 py-3">
@@ -1939,7 +2020,7 @@ export default function SecurityManagement() {
                     {filteredCoordinatorRows.length === 0 && (
                       <tr>
                         <td
-                          colSpan={9}
+                          colSpan={10}
                           className="p-8 text-center text-gray-500"
                         >
                           لا توجد نتائج مطابقة للبحث.
