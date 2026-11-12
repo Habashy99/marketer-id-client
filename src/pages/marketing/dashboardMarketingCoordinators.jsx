@@ -464,7 +464,7 @@ function DashboardMarketingCoordinators() {
 
             <main className="mx-auto max-w-[1700px] space-y-7 p-4 sm:p-6 lg:p-8">
                 {/* Page Header */}
-                <section className="relative overflow-hidden rounded-3xl bg-gradient-to-l from-[#7c2d12] via-[#c2410c] to-[#f97316] p-6 text-white shadow-xl sm:p-8">
+                <section className="relative overflow-hidden rounded-3xl bg-linear-to-l from-[#7c2d12] via-[#c2410c] to-[#f97316] p-6 text-white shadow-xl sm:p-8">
                     <div className="absolute -left-16 -top-24 h-64 w-64 rounded-full bg-white/5" />
                     <div className="absolute -bottom-32 right-1/3 h-72 w-72 rounded-full bg-amber-300/20 blur-2xl" />
 
@@ -865,7 +865,7 @@ function DashboardMarketingCoordinators() {
                                         ))}
                                     </div>
 
-                                    <div className="mt-7 rounded-2xl bg-gradient-to-l from-orange-900 to-orange-700 p-5 text-white">
+                                    <div className="mt-7 rounded-2xl bg-linear-to-l from-orange-900 to-orange-700 p-5 text-white">
                                         <p className="text-sm font-semibold text-orange-100">
                                             إجمالي السجلات الأمنية
                                         </p>
