@@ -1,10 +1,19 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+
 import Header from "../../components/header";
 import { sendHttpReq } from "../../lib/httpHandler";
 import { useAuth } from "../../context/authContext";
 import { isAdmin, hasPermission } from "../../helpers/permissions";
+
 const marketingSections = [
+    {
+        title: "نظام لوحة التحكم",
+        description: "لوحة تحكم وإحصائيات المندوبين والمنسقين",
+        path: "/marketing/dashboard-coordinators",
+        parentPermission: 7,
+    },
     {
         title: "نظام ادارة المندوبين والمنسقين",
         description: "البيانات والاستثناءات",
@@ -95,7 +104,7 @@ function MarketingHome() {
     const admin = isAdmin(user);
 
     // Admin sees all sections.
-    // Other users see a section only if they have its parent permission.
+    // Other users see sections according to their permissions.
     const visibleSections = useMemo(() => {
         if (!user) return [];
 
@@ -109,7 +118,6 @@ function MarketingHome() {
     }, [user, admin]);
 
     // Permission 11 represents "عرض المناديب".
-    // Admin users can see all statistics.
     const canViewStats = admin || hasPermission(user, 11);
 
     useEffect(() => {
@@ -122,7 +130,7 @@ function MarketingHome() {
             setError("");
 
             try {
-                const response = await sendHttpReq("dashboard/stats");
+                const response = await sendHttpReq("conduct/stats");
 
                 if (!response?.stats) {
                     throw new Error(
@@ -135,7 +143,10 @@ function MarketingHome() {
                     setStats(response.stats);
                 }
             } catch (err) {
-                console.error("Failed to load dashboard statistics:", err);
+                console.error(
+                    "Failed to load conduct statistics:",
+                    err
+                );
 
                 if (!cancelled) {
                     setError(err.message || "فشل تحميل الإحصائيات.");
@@ -164,7 +175,7 @@ function MarketingHome() {
 
         try {
             const response = await sendHttpReq(
-                "dashboard/records",
+                "conduct/records",
                 "POST",
                 { category: card.key }
             );
@@ -175,7 +186,10 @@ function MarketingHome() {
 
             setRecords(response.records ?? []);
         } catch (err) {
-            console.error("Failed to load dashboard records:", err);
+            console.error(
+                "Failed to load conduct records:",
+                err
+            );
 
             setRecordsError(
                 err.message || "حدث خطأ أثناء تحميل البيانات."
@@ -220,7 +234,7 @@ function MarketingHome() {
     return (
         <>
             <div className="sticky top-0 z-50">
-                <Header user={true} />
+                <Header user={user} />
             </div>
 
             <main
@@ -248,7 +262,7 @@ function MarketingHome() {
                         </button>
                     </div>
 
-                    {/* Sections available to the current user */}
+                    {/* Marketing Sections */}
                     <section className="mt-8">
                         {visibleSections.length > 0 ? (
                             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -284,7 +298,7 @@ function MarketingHome() {
                         )}
                     </section>
 
-                    {/* Coordinator and representative statistics */}
+                    {/* Existing Coordinator Statistics */}
                     {canViewStats && (
                         <section className="mt-10">
                             <div className="mb-5">
@@ -340,7 +354,7 @@ function MarketingHome() {
                         </section>
                     )}
 
-                    {/* Records table */}
+                    {/* Records Table */}
                     {selectedCard && canViewStats && (
                         <section className="mt-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                             <div className="flex flex-wrap items-center justify-between gap-3 bg-orange-50 p-5">
@@ -390,21 +404,11 @@ function MarketingHome() {
                                         <table className="w-full min-w-900px text-right text-sm">
                                             <thead className="bg-slate-100 text-slate-700">
                                                 <tr>
-                                                    <th className="px-4 py-3">
-                                                        الكود
-                                                    </th>
-                                                    <th className="px-4 py-3">
-                                                        الاسم
-                                                    </th>
-                                                    <th className="px-4 py-3">
-                                                        الوظيفة
-                                                    </th>
-                                                    <th className="px-4 py-3">
-                                                        الشركة
-                                                    </th>
-                                                    <th className="px-4 py-3">
-                                                        الحالة
-                                                    </th>
+                                                    <th className="px-4 py-3">الكود</th>
+                                                    <th className="px-4 py-3">الاسم</th>
+                                                    <th className="px-4 py-3">الوظيفة</th>
+                                                    <th className="px-4 py-3">الشركة</th>
+                                                    <th className="px-4 py-3">الحالة</th>
                                                     <th className="px-4 py-3">
                                                         انتهاء الشهادة الصحية
                                                     </th>
@@ -441,9 +445,7 @@ function MarketingHome() {
                                                             {record.health_certificate_expiry_date
                                                                 ? new Date(
                                                                     record.health_certificate_expiry_date
-                                                                ).toLocaleDateString(
-                                                                    "en-GB"
-                                                                )
+                                                                ).toLocaleDateString("en-GB")
                                                                 : "-"}
                                                         </td>
                                                     </tr>
