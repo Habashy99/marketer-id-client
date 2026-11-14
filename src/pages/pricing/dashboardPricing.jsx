@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../../components/header.jsx";
+import { ArrowRight } from "lucide-react";
 
 const SECTIONS = [
   {
@@ -337,13 +338,24 @@ function PoultryDashboard() {
       <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
         {/* Page Heading */}
         <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 md:text-3xl">
-              لوحة تحكم إدارة التسعير
-            </h1>
-            <p className="mt-2 text-sm text-gray-500">
-              نظرة عامة على أقسام التسعير ومؤشرات الأداء
-            </p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-green-200 hover:bg-green-50 hover:text-green-700"
+              title="رجوع"
+            >
+              <ArrowRight size={20} />
+            </button>
+
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800 md:text-3xl">
+                لوحة تحكم إدارة التسعير
+              </h1>
+              <p className="mt-2 text-sm text-gray-500">
+                نظرة عامة على أقسام التسعير ومؤشرات الأداء
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 shadow-sm">
