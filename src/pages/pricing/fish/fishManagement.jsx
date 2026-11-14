@@ -15,7 +15,7 @@ function FishManagement() {
                 className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10"
             >
                 <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-cyan-100 bg-white shadow-xl">
-                    <div className="bg-gradient-to-l from-cyan-600 to-blue-500 px-8 py-10 text-center text-white">
+                    <div className="bg-linear-to-l from-cyan-600 to-blue-500 px-8 py-10 text-center text-white">
                         <div className="mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-3xl bg-white/20 text-6xl shadow-lg">
                             🐟
                         </div>
