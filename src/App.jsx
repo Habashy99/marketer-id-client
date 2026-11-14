@@ -1,4 +1,3 @@
-
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/authContext";
 
@@ -27,6 +26,7 @@ import DailyExchange from "./components/pricing/chicken/DailyExchange.jsx";
 import SupplierFactors from "./components/pricing/chicken/SupplierFactors.jsx";
 import ManufacturingCost from "./components/pricing/chicken/ManufacturingCost.jsx";
 import SellingPrices from "./components/pricing/chicken/SellingPrices.jsx";
+import PoultryDashboard from "./pages/pricing/dashboardPricing.jsx";
 
 function App() {
   return (
@@ -55,6 +55,8 @@ function App() {
             element={<CardManagement />}
           />
 
+          <Route path="/pricing/dashboard" element={<PoultryDashboard />} />
+
           <Route
             path="/marketing/dashboard-coordinators"
             element={<DashboardMarketingCoordinators />}
@@ -65,58 +67,31 @@ function App() {
             element={<CoordinatorsManagement />}
           />
 
-          <Route
-            path="/marketing/card-designer"
-            element={<CardDesigner />}
-          />
+          <Route path="/marketing/card-designer" element={<CardDesigner />} />
 
-          <Route
-            path="/marketing/security"
-            element={<SecurityManagement />}
-          />
+          <Route path="/marketing/security" element={<SecurityManagement />} />
 
           {/* Pricing Home */}
-          <Route
-            path="/pricing"
-            element={<PricingHome />}
-          />
+          <Route path="/pricing" element={<PricingHome />} />
 
           {/* Pricing Sections */}
-          <Route
-            path="/pricing/poultry"
-            element={<ChickenManagement />}
-          />
+          <Route path="/pricing/poultry" element={<ChickenManagement />} />
 
-          <Route
-            path="/pricing/eggs"
-            element={<EggManagement />}
-          />
+          <Route path="/pricing/eggs" element={<EggManagement />} />
 
-          <Route
-            path="/pricing/fish"
-            element={<FishManagement />}
-          />
+          <Route path="/pricing/fish" element={<FishManagement />} />
 
           {/* Poultry Management Pages */}
-          <Route
-            path="/pricing/exchange"
-            element={<DailyExchange />}
-          />
+          <Route path="/pricing/exchange" element={<DailyExchange />} />
 
-          <Route
-            path="/pricing/suppliers"
-            element={<SupplierFactors />}
-          />
+          <Route path="/pricing/suppliers" element={<SupplierFactors />} />
 
           <Route
             path="/pricing/manufacturing"
             element={<ManufacturingCost />}
           />
 
-          <Route
-            path="/pricing/selling-prices"
-            element={<SellingPrices />}
-          />
+          <Route path="/pricing/selling-prices" element={<SellingPrices />} />
         </Routes>
       </HashRouter>
     </AuthProvider>

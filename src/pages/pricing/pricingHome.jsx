@@ -4,6 +4,18 @@ import Header from "../../components/header";
 
 const pricingSections = [
     {
+        title: "لوحة التحكم",
+        description:
+            "متابعة شاملة لجميع قطاعات التسعير من مكان واحد، مع عرض الإحصائيات ومؤشرات الأداء وحركة الأسعار وهوامش الربح.",
+        icon: "📊",
+        path: "/pricing/dashboard",
+        gradient: "from-violet-600 to-indigo-600",
+        light: "bg-violet-50",
+        iconColor: "text-violet-600",
+        label: "نظرة عامة على التسعير",
+        featured: true,
+    },
+    {
         title: "الدواجن",
         description:
             "إدارة أسعار الدواجن والمنتجات ومتابعة البورصة اليومية ومعاملات الموردين وتكاليف التصنيع وهوامش الربح.",
@@ -92,13 +104,17 @@ function PricingHome() {
                     </div>
 
                     {/* Sections */}
-                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
                         {pricingSections.map((section) => (
                             <button
                                 key={section.path}
                                 type="button"
                                 onClick={() => navigate(section.path)}
-                                className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-7 text-right shadow-sm transition duration-300 hover:-translate-y-2 hover:border-transparent hover:shadow-xl"
+                                className={`group relative overflow-hidden rounded-3xl border bg-white p-7 text-right shadow-sm transition duration-300 hover:-translate-y-2 hover:shadow-xl ${
+                                    section.featured
+                                        ? "border-violet-200 hover:border-violet-400"
+                                        : "border-slate-200 hover:border-transparent"
+                                }`}
                             >
                                 {/* Decorative Background */}
                                 <div
@@ -113,12 +129,24 @@ function PricingHome() {
                                             {section.icon}
                                         </div>
 
-                                        <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-bold text-slate-500 transition group-hover:bg-orange-50 group-hover:text-orange-600">
+                                        <span
+                                            className={`rounded-full px-3 py-2 text-xs font-bold ${
+                                                section.featured
+                                                    ? "bg-violet-100 text-violet-700"
+                                                    : "bg-slate-100 text-slate-500 group-hover:bg-orange-50 group-hover:text-orange-600"
+                                            }`}
+                                        >
                                             {section.label}
                                         </span>
                                     </div>
 
-                                    <h2 className="text-2xl font-extrabold text-slate-800 transition group-hover:text-orange-600">
+                                    <h2
+                                        className={`text-2xl font-extrabold text-slate-800 transition ${
+                                            section.featured
+                                                ? "group-hover:text-violet-600"
+                                                : "group-hover:text-orange-600"
+                                        }`}
+                                    >
                                         {section.title}
                                     </h2>
 
@@ -127,8 +155,16 @@ function PricingHome() {
                                     </p>
 
                                     <div className="mt-7 flex items-center justify-between border-t border-slate-100 pt-5">
-                                        <span className="text-sm font-extrabold text-slate-700 transition group-hover:text-orange-600">
-                                            الدخول إلى القسم
+                                        <span
+                                            className={`text-sm font-extrabold text-slate-700 transition ${
+                                                section.featured
+                                                    ? "group-hover:text-violet-600"
+                                                    : "group-hover:text-orange-600"
+                                            }`}
+                                        >
+                                            {section.featured
+                                                ? "فتح لوحة التحكم"
+                                                : "الدخول إلى القسم"}
                                         </span>
 
                                         <span
@@ -151,7 +187,7 @@ function PricingHome() {
                                 </h3>
 
                                 <p className="mt-1 text-sm text-slate-500">
-                                    اختر القطاع الذي تريد إدارة أسعاره ومتابعة بياناته.
+                                    اختر لوحة التحكم لمتابعة جميع القطاعات أو اختر القطاع الذي تريد إدارة بياناته.
                                 </p>
                             </div>
 
