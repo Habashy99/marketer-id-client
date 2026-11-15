@@ -2043,7 +2043,7 @@ export default function SecurityManagement() {
                       >
                         {/* Actions */}
 
-                        <td className="sticky right-0 z-[1] whitespace-nowrap bg-white px-4 py-3">
+                        <td className="sticky right-0 z-1 whitespace-nowrap bg-white px-4 py-3">
                           {canEditSecurity && (
                             <button
                               type="button"
@@ -2235,7 +2235,7 @@ export default function SecurityManagement() {
       {/* ------------------------------------------------------------------ */}
 
       {coordinatorModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-3 sm:p-5">
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-3 sm:p-5">
           <div className="flex max-h-[94vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4 sm:p-5">
               <div>
