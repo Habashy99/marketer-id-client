@@ -504,6 +504,13 @@ function getAllSecurityNotes(item) {
 }
 
 function getAllFileTypes(item) {
+  const job = String(item.job || "").trim();
+
+  // العميل يكون تابعًا لملف 25 فقط
+  if (job === "عميل") {
+    return "25";
+  }
+
   const types = new Set();
 
   if (item.file_type) {
@@ -524,7 +531,6 @@ function getAllFileTypes(item) {
 
   return [...types].join("، ") || "-";
 }
-
 /* -------------------------------------------------------------------------- */
 /* Main Component                                                             */
 /* -------------------------------------------------------------------------- */
