@@ -13,8 +13,15 @@ import { hasPermission, isAdmin } from "../../../helpers/permissions";
 /* -------------------------------------------------------------------------- */
 
 const JOB_OPTIONS = ["عميل", "مندوب", "مندوبة", "منسق", "منسقة"];
+
 const FILE_TYPE_OPTIONS = ["مناديب/منسقين", "25"];
-const SECURITY_STATUSES = ["سليم", "تحت المراجعة", "بلوك", "غير محدد"];
+
+const SECURITY_STATUSES = [
+  "سليم",
+  "تحت المراجعة",
+  "بلوك",
+  "غير محدد",
+];
 
 const GOVERNORATES = [
   "الإسكندرية",
@@ -30,26 +37,33 @@ const GOVERNORATES = [
 const PAGE_SIZE = 100;
 
 const EMPTY_FORM = {
+  // Person
   name: "",
   national_id_number: "",
   job: "عميل",
-  branch: "",
-  branch_name: "",
   governorate: "",
+  birth_date: "",
+  birth_place: "",
+
+  // Incident
+  incident_branch: "",
+  incident_branch_name: "",
   stolen_goods: "",
   value_of_stolen_goods: "",
   incident_date: "",
+
+  // Permit
   permit_number: "",
-  permit_company_name: "",
   permit_issue_date: "",
-  permit_branch: "",
+
+  // General
   file_type: "25",
   security_status: "غير محدد",
   notes: "",
 };
 
 /* -------------------------------------------------------------------------- */
-/* API Helpers                                                                */
+/* Request Helpers                                                            */
 /* -------------------------------------------------------------------------- */
 
 async function requestData(url, method = "GET", body) {
@@ -59,21 +73,25 @@ async function requestData(url, method = "GET", body) {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data?.message || "حدث خطأ أثناء تنفيذ الطلب.");
+      throw new Error(
+        data?.message || "حدث خطأ أثناء تنفيذ الطلب.",
+      );
     }
 
     return data;
   }
 
   if (response?.ok === false) {
-    throw new Error(response.message || "حدث خطأ أثناء تنفيذ الطلب.");
+    throw new Error(
+      response.message || "حدث خطأ أثناء تنفيذ الطلب.",
+    );
   }
 
   return response ?? {};
 }
 
 /* -------------------------------------------------------------------------- */
-/* Formatting Helpers                                                         */
+/* Date Helpers                                                               */
 /* -------------------------------------------------------------------------- */
 
 function getDateInputValue(value) {
@@ -90,17 +108,25 @@ function getFormDate(value) {
   return date === "-" ? "" : date;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Status Helpers                                                             */
+/* -------------------------------------------------------------------------- */
+
 function getNormalizedStatus(status) {
   const value = String(status ?? "").trim();
 
-  if (value === "مرفوض" || value === "غير سليم") return "بلوك";
+  if (value === "مرفوض" || value === "غير سليم") {
+    return "بلوك";
+  }
 
   return value || "غير محدد";
 }
 
 function getItemStatus(item) {
   return getNormalizedStatus(
-    item.security_status ?? item.security_situation ?? item.status,
+    item.security_status ??
+      item.security_situation ??
+      item.status,
   );
 }
 
@@ -120,12 +146,19 @@ function getStatusStyle(status) {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* File Type Helpers                                                          */
+/* -------------------------------------------------------------------------- */
+
 function getNormalizedFileType(value) {
   const normalized = String(value ?? "").trim();
 
   if (normalized === "25") return "25";
 
-  if (normalized === "مناديب/منسقين" || normalized === "مناديب/ منسقين") {
+  if (
+    normalized === "مناديب/منسقين" ||
+    normalized === "مناديب/ منسقين"
+  ) {
     return "مناديب/منسقين";
   }
 
@@ -133,12 +166,8 @@ function getNormalizedFileType(value) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Coordinator Source Helpers                                                 */
+/* Coordinator Helpers                                                        */
 /* -------------------------------------------------------------------------- */
-
-// المصدر منفصل تمامًا عن الوظيفة.
-// permanent = أساسي من جدول coordinator.
-// temporary = مؤقت من جدول temporary_coordinator.
 
 function getCoordinatorSourceType(item) {
   const sourceType = String(item?.source_type ?? "")
@@ -202,34 +231,35 @@ function getRecordKey(item) {
 
 function getRecordTitle(item) {
   if (isIncident(item)) return "تعديل الواقعة";
-
   if (isPermit(item)) return "تعديل التصريح";
 
   return "تعديل بيانات الشخص";
 }
 
-function getFileType(item) {
-  if (isIncident(item)) return "25";
-
-  if (isPermit(item)) return "مناديب/منسقين";
-
-  return getNormalizedFileType(item.file_type) || item.file_type || "-";
-}
-
 /* -------------------------------------------------------------------------- */
-/* Normalize Detailed Records                                                */
+/* Record Normalizers                                                         */
 /* -------------------------------------------------------------------------- */
 
 function normalizePersonRecord(person) {
   return {
     ...person,
+
     id: person.id,
+
     record_type: "person",
-    company_name: person.company_id ?? person.company_name ?? "",
-    advertising_company:
-      person.advertising_company_id ?? person.advertising_company ?? "",
+
     security_status:
-      person.security_status ?? person.security_situation ?? "غير محدد",
+      person.security_status ??
+      person.security_situation ??
+      "غير محدد",
+
+    incidents: Array.isArray(person.incidents)
+      ? person.incidents
+      : [],
+
+    permits: Array.isArray(person.permits)
+      ? person.permits
+      : [],
   };
 }
 
@@ -237,16 +267,30 @@ function normalizeIncidentRecord(incident, person) {
   return {
     ...person,
     ...incident,
+
     id: incident.id,
     source_record_id: incident.id,
     person_id: incident.security_person_id ?? person.id,
+
     record_type: "incident",
     record_type_name: "واقعة",
-    incident_branch: incident.branch ?? "",
+
+    incident_branch:
+      incident.incident_branch ??
+      incident.branch ??
+      "",
+
     stolen_goods: incident.stolen_goods ?? "",
-    value_of_stolen_goods: incident.stolen_goods_value ?? "",
+
+    value_of_stolen_goods:
+      incident.stolen_goods_value ??
+      incident.value_of_stolen_goods ??
+      "",
+
     incident_date: incident.incident_date ?? "",
+
     notes: incident.notes ?? "",
+
     file_type: "25",
   };
 }
@@ -255,18 +299,230 @@ function normalizePermitRecord(permit, person) {
   return {
     ...person,
     ...permit,
+
     id: permit.id,
     source_record_id: permit.id,
     person_id: permit.security_person_id ?? person.id,
+
     record_type: "permit",
     record_type_name: "تصريح",
+
     permit_number: permit.permit_number ?? "",
-    permit_company_name: permit.company_name ?? "",
-    permit_issue_date: permit.issue_date ?? "",
-    permit_branch: permit.branch ?? "",
+
+    permit_issue_date:
+      permit.issue_date ??
+      permit.permit_issue_date ??
+      "",
+
     notes: permit.notes ?? "",
+
     file_type: "مناديب/منسقين",
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Aggregated Display Helpers                                                 */
+/* -------------------------------------------------------------------------- */
+
+function getRecordsArray(value) {
+  if (Array.isArray(value)) return value;
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function formatRecordList(records, getter) {
+  const values = records
+    .map((record) => getter(record))
+    .filter(
+      (value) =>
+        value !== null &&
+        value !== undefined &&
+        String(value).trim() !== "",
+    );
+
+  return values.length ? values.join("\n") : "-";
+}
+
+function getPersonIncidents(item) {
+  return getRecordsArray(item.incidents);
+}
+
+function getPersonPermits(item) {
+  return getRecordsArray(item.permits);
+}
+
+function getIncidentGoods(item) {
+  const incidents = getPersonIncidents(item);
+
+  if (incidents.length) {
+    return formatRecordList(
+      incidents,
+      (incident) => incident.stolen_goods || "-",
+    );
+  }
+
+  return item.stolen_goods || "-";
+}
+
+function getIncidentValues(item) {
+  const incidents = getPersonIncidents(item);
+
+  if (incidents.length) {
+    return formatRecordList(
+      incidents,
+      (incident) =>
+        incident.stolen_goods_value ??
+        incident.value_of_stolen_goods ??
+        "-",
+    );
+  }
+
+  return (
+    item.value_of_stolen_goods ??
+    item.stolen_goods_value ??
+    "-"
+  );
+}
+
+function getIncidentDates(item) {
+  const incidents = getPersonIncidents(item);
+
+  if (incidents.length) {
+    return formatRecordList(
+      incidents,
+      (incident) =>
+        getDateInputValue(incident.incident_date),
+    );
+  }
+
+  return getDateInputValue(item.incident_date);
+}
+
+function getIncidentBranches(item, branchOptions) {
+  const incidents = getPersonIncidents(item);
+
+  if (incidents.length) {
+    return formatRecordList(incidents, (incident) => {
+      const value = String(
+        incident.incident_branch ??
+          incident.branch ??
+          "",
+      ).trim();
+
+      const matched = branchOptions.find(
+        (option) => option.value === value,
+      );
+
+      return (
+        matched?.label ||
+        (value && !/^\d+$/.test(value) ? value : "") ||
+        "-"
+      );
+    });
+  }
+
+  const value = String(
+    item.incident_branch ?? item.branch ?? "",
+  ).trim();
+
+  const matched = branchOptions.find(
+    (option) => option.value === value,
+  );
+
+  return (
+    matched?.label ||
+    (value && !/^\d+$/.test(value) ? value : "") ||
+    "-"
+  );
+}
+
+function getPermitNumbers(item) {
+  const permits = getPersonPermits(item);
+
+  if (permits.length) {
+    return formatRecordList(
+      permits,
+      (permit) => permit.permit_number || "-",
+    );
+  }
+
+  return item.permit_number || "-";
+}
+
+function getPermitDates(item) {
+  const permits = getPersonPermits(item);
+
+  if (permits.length) {
+    return formatRecordList(
+      permits,
+      (permit) =>
+        getDateInputValue(
+          permit.issue_date ?? permit.permit_issue_date,
+        ),
+    );
+  }
+
+  return getDateInputValue(
+    item.issue_date ?? item.permit_issue_date,
+  );
+}
+
+function getAllSecurityNotes(item) {
+  const notes = [];
+
+  if (item.notes) {
+    notes.push(String(item.notes));
+  }
+
+  getPersonIncidents(item).forEach((incident, index) => {
+    if (incident.notes) {
+      notes.push(
+        `الواقعة ${index + 1}: ${incident.notes}`,
+      );
+    }
+  });
+
+  getPersonPermits(item).forEach((permit, index) => {
+    if (permit.notes) {
+      notes.push(
+        `التصريح ${index + 1}: ${permit.notes}`,
+      );
+    }
+  });
+
+  return [...new Set(notes)].join("\n") || "-";
+}
+
+function getAllFileTypes(item) {
+  const types = new Set();
+
+  if (item.file_type) {
+    String(item.file_type)
+      .split(/[،,]/)
+      .map(getNormalizedFileType)
+      .filter(Boolean)
+      .forEach((value) => types.add(value));
+  }
+
+  if (getPersonIncidents(item).length) {
+    types.add("25");
+  }
+
+  if (getPersonPermits(item).length) {
+    types.add("مناديب/منسقين");
+  }
+
+  return [...types].join("، ") || "-";
 }
 
 /* -------------------------------------------------------------------------- */
@@ -286,12 +542,9 @@ export default function SecurityManagement() {
   const canEditSecurity = admin || hasPermission(user, 36);
   const canDeleteSecurity = admin || hasPermission(user, 37);
 
-  /* Records */
+  /* Main Data */
 
   const [rows, setRows] = useState([]);
-
-  /* Pagination */
-
   const [page, setPage] = useState(1);
 
   const [pagination, setPagination] = useState({
@@ -310,21 +563,18 @@ export default function SecurityManagement() {
   const [statusFilter, setStatusFilter] = useState("");
   const [fileTypeFilter, setFileTypeFilter] = useState("");
 
-  /* Loading */
+  /* Loading and Messages */
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
-  /* Messages */
-
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  /* Dropdown Options */
+  /* Options */
 
   const [branches, setBranches] = useState([]);
-  const [advertisingCompanies, setAdvertisingCompanies] = useState([]);
   const [optionsLoading, setOptionsLoading] = useState(false);
 
   /* Create / Edit Modal */
@@ -334,8 +584,6 @@ export default function SecurityManagement() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [formError, setFormError] = useState("");
 
-  /* Related Edit Records */
-
   const [editTargets, setEditTargets] = useState([]);
   const [selectedEditKey, setSelectedEditKey] = useState("");
   const [loadingEditTargets, setLoadingEditTargets] = useState(false);
@@ -343,23 +591,94 @@ export default function SecurityManagement() {
 
   /* Coordinator Review */
 
-  const [coordinatorModalOpen, setCoordinatorModalOpen] = useState(false);
+  const [coordinatorModalOpen, setCoordinatorModalOpen] =
+    useState(false);
+
   const [coordinatorRows, setCoordinatorRows] = useState([]);
-  const [coordinatorLoading, setCoordinatorLoading] = useState(false);
-  const [coordinatorSaving, setCoordinatorSaving] = useState(false);
+  const [coordinatorLoading, setCoordinatorLoading] =
+    useState(false);
+
+  const [coordinatorSaving, setCoordinatorSaving] =
+    useState(false);
+
   const [coordinatorError, setCoordinatorError] = useState("");
-  const [coordinatorSuccess, setCoordinatorSuccess] = useState("");
-  const [coordinatorSearch, setCoordinatorSearch] = useState("");
+  const [coordinatorSuccess, setCoordinatorSuccess] =
+    useState("");
 
-  const editingIncident = Boolean(editingRecord && isIncident(editingRecord));
+  const [coordinatorSearch, setCoordinatorSearch] =
+    useState("");
 
-  const editingPermit = Boolean(editingRecord && isPermit(editingRecord));
+  /* Editing Types */
 
-  const editingPerson = Boolean(editingRecord && isPersonOnly(editingRecord));
+  const editingIncident = Boolean(
+    editingRecord && isIncident(editingRecord),
+  );
+
+  const editingPermit = Boolean(
+    editingRecord && isPermit(editingRecord),
+  );
+
+  const editingPerson = Boolean(
+    editingRecord && isPersonOnly(editingRecord),
+  );
 
   const showPersonFields = !editingRecord || editingPerson;
+  const showIncidentFields = !editingRecord || editingIncident;
+  const showPermitFields = !editingRecord || editingPermit;
 
-  const showIncidentFields = Boolean(editingRecord && editingIncident);
+  /* ------------------------------------------------------------------------ */
+  /* Branch Options                                                           */
+  /* ------------------------------------------------------------------------ */
+
+  const branchOptions = useMemo(
+    () =>
+      branches.map((branch) => ({
+        value: String(branch.id ?? branch.branch ?? ""),
+        label: String(branch.a_name ?? branch.name ?? ""),
+      })),
+    [branches],
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* Display Helpers                                                          */
+  /* ------------------------------------------------------------------------ */
+
+  function getAdvertisingCompanyName(item) {
+    const companyId = String(
+      item.advertising_company ??
+        item.advertising_company_id ??
+        "",
+    ).trim();
+
+    return (
+      item.advertising_company_name ||
+      (companyId && !/^\d+$/.test(companyId)
+        ? companyId
+        : "") ||
+      "-"
+    );
+  }
+
+  function getCompanyName(item) {
+    return (
+      item.company_display_name ||
+      item.supplier_name ||
+      (item.company_name &&
+      !/^\d+$/.test(String(item.company_name))
+        ? item.company_name
+        : "") ||
+      "-"
+    );
+  }
+
+  function getAreaName(item) {
+    return (
+      item.area ||
+      item.region ||
+      item.district ||
+      "-"
+    );
+  }
 
   /* ------------------------------------------------------------------------ */
   /* Load Security Records                                                    */
@@ -380,14 +699,37 @@ export default function SecurityManagement() {
       params.set("page", String(page));
       params.set("limit", String(PAGE_SIZE));
 
-      if (search.trim()) params.set("search", search.trim());
-      if (jobFilter.trim()) params.set("job", jobFilter.trim());
-      if (statusFilter) params.set("status", statusFilter);
-      if (fileTypeFilter) params.set("file_type", fileTypeFilter);
+      if (search.trim()) {
+        params.set("search", search.trim());
+      }
 
-      const data = await requestData(`security?${params.toString()}`);
+      if (jobFilter.trim()) {
+        params.set("job", jobFilter.trim());
+      }
 
-      setRows(Array.isArray(data.records) ? data.records : []);
+      if (statusFilter) {
+        params.set("status", statusFilter);
+      }
+
+      if (fileTypeFilter) {
+        params.set("file_type", fileTypeFilter);
+      }
+
+      const data = await requestData(
+        `security?${params.toString()}`,
+      );
+
+      const records = Array.isArray(data.records)
+        ? data.records
+        : [];
+
+      setRows(
+        records.map((item) => ({
+          ...item,
+          incidents: getRecordsArray(item.incidents),
+          permits: getRecordsArray(item.permits),
+        })),
+      );
 
       setPagination({
         page: data.pagination?.page ?? page,
@@ -395,7 +737,8 @@ export default function SecurityManagement() {
         total: data.pagination?.total ?? 0,
         totalPages: data.pagination?.totalPages ?? 0,
         hasNextPage: data.pagination?.hasNextPage ?? false,
-        hasPreviousPage: data.pagination?.hasPreviousPage ?? page > 1,
+        hasPreviousPage:
+          data.pagination?.hasPreviousPage ?? page > 1,
       });
     } catch (err) {
       console.error("Load security records error:", err);
@@ -405,14 +748,21 @@ export default function SecurityManagement() {
     } finally {
       setLoading(false);
     }
-  }, [canViewSecurity, page, search, jobFilter, statusFilter, fileTypeFilter]);
+  }, [
+    canViewSecurity,
+    page,
+    search,
+    jobFilter,
+    statusFilter,
+    fileTypeFilter,
+  ]);
 
   useEffect(() => {
     loadRecords();
   }, [loadRecords]);
 
   /* ------------------------------------------------------------------------ */
-  /* Load Branches and Advertising Companies                                 */
+  /* Load Form Options                                                        */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -422,10 +772,9 @@ export default function SecurityManagement() {
       setOptionsLoading(true);
 
       try {
-        const [branchesData, companiesData] = await Promise.all([
-          requestData("retail/branches"),
-          requestData("advertising-companies"),
-        ]);
+        const branchesData = await requestData(
+          "retail/branches",
+        );
 
         setBranches(
           Array.isArray(branchesData)
@@ -434,16 +783,11 @@ export default function SecurityManagement() {
               ? branchesData.branches
               : [],
         );
-
-        setAdvertisingCompanies(
-          Array.isArray(companiesData?.companies)
-            ? companiesData.companies
-            : Array.isArray(companiesData)
-              ? companiesData
-              : [],
-        );
       } catch (err) {
-        console.error("Failed to load security form options:", err);
+        console.error(
+          "Failed to load security form options:",
+          err,
+        );
       } finally {
         setOptionsLoading(false);
       }
@@ -453,130 +797,59 @@ export default function SecurityManagement() {
   }, [canViewSecurity]);
 
   /* ------------------------------------------------------------------------ */
-  /* Dropdown Options                                                         */
-  /* ------------------------------------------------------------------------ */
-
-  const branchOptions = useMemo(
-    () =>
-      branches.map((branch) => ({
-        value: String(branch.id ?? branch.branch ?? ""),
-        label: String(branch.a_name ?? branch.name ?? ""),
-      })),
-    [branches],
-  );
-
-  const advertisingCompanyOptions = useMemo(
-    () =>
-      advertisingCompanies.map((company) => ({
-        value: String(company.id ?? ""),
-        label: String(company.name ?? ""),
-      })),
-    [advertisingCompanies],
-  );
-
-  /* ------------------------------------------------------------------------ */
-  /* Display Helpers                                                          */
-  /* ------------------------------------------------------------------------ */
-
-  function getBranchName(item) {
-    const branchValue =
-      item.incident_branch ??
-      item.permit_branch ??
-      item.person_branch ??
-      item.branch ??
-      "";
-
-    const branchId = String(branchValue).trim();
-
-    const matchedBranch = branchOptions.find(
-      (option) => option.value === branchId,
-    );
-
-    return (
-      matchedBranch?.label ||
-      (branchId && !/^\d+$/.test(branchId) ? branchId : "") ||
-      item.branch_name ||
-      "-"
-    );
-  }
-
-  function getAdvertisingCompanyName(item) {
-    const companyId = String(item.advertising_company ?? "").trim();
-
-    return (
-      item.advertising_company_name ||
-      advertisingCompanyOptions.find((option) => option.value === companyId)
-        ?.label ||
-      (companyId && !/^\d+$/.test(companyId) ? companyId : "") ||
-      "-"
-    );
-  }
-
-  function getCompanyName(item) {
-    return (
-      item.company_display_name ||
-      item.supplier_name ||
-      (item.company_name && !/^\d+$/.test(String(item.company_name))
-        ? item.company_name
-        : "") ||
-      "-"
-    );
-  }
-
-  /* ------------------------------------------------------------------------ */
-  /* Build Form From Selected Record                                          */
+  /* Build Form                                                               */
   /* ------------------------------------------------------------------------ */
 
   function buildFormFromRecord(item) {
-    const companyName = getCompanyName(item);
-    const branchName = getBranchName(item);
-    const advertisingCompanyName = getAdvertisingCompanyName(item);
-
-    const branchValue =
+    const incidentBranch =
       item.incident_branch ??
-      item.permit_branch ??
-      item.branch ??
-      item.person_branch ??
+      (isIncident(item) ? item.branch : "") ??
       "";
 
     return {
       ...EMPTY_FORM,
+
       name: item.name || "",
       national_id_number: item.national_id_number || "",
       job: item.job || "عميل",
-      company_name: item.company_name ?? item.company_id ?? "",
-      company_display_name:
-        item.company_display_name || (companyName === "-" ? "" : companyName),
-      advertising_company: (
-        item.advertising_company ??
-        item.advertising_company_id ??
-        ""
-      ).toString(),
-      advertising_company_name:
-        item.advertising_company_name ||
-        (advertisingCompanyName === "-" ? "" : advertisingCompanyName),
-      branch: String(branchValue ?? ""),
-      branch_name: item.branch_name || (branchName === "-" ? "" : branchName),
+
       governorate: item.governorate || "",
+
+      incident_branch: String(incidentBranch ?? ""),
+
+      incident_branch_name:
+        item.incident_branch_name ||
+        (incidentBranch &&
+        !/^\d+$/.test(String(incidentBranch))
+          ? String(incidentBranch)
+          : ""),
+
       stolen_goods: item.stolen_goods || "",
+
       value_of_stolen_goods:
-        item.value_of_stolen_goods ?? item.stolen_goods_value ?? "",
-      incident_date: getFormDate(item.incident_date),
-      permit_number: item.permit_number || "",
-      permit_company_name:
-        item.permit_company_name ||
-        (isPermit(item) ? item.company_name : "") ||
+        item.value_of_stolen_goods ??
+        item.stolen_goods_value ??
         "",
-      permit_issue_date: getFormDate(item.issue_date ?? item.permit_issue_date),
-      permit_branch: String(
-        item.permit_branch ?? (isPermit(item) ? item.branch : "") ?? "",
+
+      incident_date: getFormDate(item.incident_date),
+
+      permit_number: item.permit_number || "",
+
+      permit_issue_date: getFormDate(
+        item.issue_date ?? item.permit_issue_date,
       ),
+
       file_type:
         getNormalizedFileType(item.file_type) ||
         item.file_type ||
         "مناديب/منسقين",
+
       security_status: getItemStatus(item),
+
       notes: item.notes || "",
+
+      birth_date: getFormDate(item.birth_date),
+      birth_place: item.birth_place || "",
     };
   }
 
@@ -613,6 +886,7 @@ export default function SecurityManagement() {
             ...item,
 
             source_type: sourceType,
+
             source_label:
               item.source_label ||
               (sourceType === "temporary"
@@ -626,31 +900,44 @@ export default function SecurityManagement() {
             ).trim(),
 
             security_status: getNormalizedStatus(
-              item.security_status ?? item.security_situation ?? "غير محدد",
+              item.security_status ??
+                item.security_situation ??
+                "غير محدد",
             ),
 
             notes: item.security_notes ?? item.notes ?? "",
-            review_notes: item.security_notes ?? item.notes ?? "",
+
+            review_notes:
+              item.security_notes ?? item.notes ?? "",
 
             selected:
-              !item.already_imported && !item.deleted_security_record,
+              !item.already_imported &&
+              !item.deleted_security_record,
           };
         }),
       );
 
       if (records.length === 0) {
-        setCoordinatorSuccess("لا توجد سجلات منسقين متاحة للمراجعة.");
+        setCoordinatorSuccess(
+          "لا توجد سجلات منسقين متاحة للمراجعة.",
+        );
       }
     } catch (err) {
       console.error("Load coordinators error:", err);
 
-      setCoordinatorError(err.message || "تعذر تحميل بيانات المنسقين.");
+      setCoordinatorError(
+        err.message || "تعذر تحميل بيانات المنسقين.",
+      );
     } finally {
       setCoordinatorLoading(false);
     }
   }
 
-  function updateCoordinatorReviewRow(nationalId, field, value) {
+  function updateCoordinatorReviewRow(
+    nationalId,
+    field,
+    value,
+  ) {
     setCoordinatorRows((previous) =>
       previous.map((item) =>
         item.national_id_number === nationalId
@@ -683,11 +970,11 @@ export default function SecurityManagement() {
     );
   }, [coordinatorRows, coordinatorSearch]);
 
-  // يشمل السجلات الجديدة والمضافة بالفعل، ويستثني السجلات المعطلة.
   const selectedCoordinatorCount = useMemo(
     () =>
       coordinatorRows.filter(
-        (item) => item.selected && !item.deleted_security_record,
+        (item) =>
+          item.selected && !item.deleted_security_record,
       ).length,
     [coordinatorRows],
   );
@@ -700,24 +987,29 @@ export default function SecurityManagement() {
       return;
     }
 
-    // نرسل كل السجلات المحددة، سواء كانت جديدة أو موجودة بالفعل.
     const selectedRows = coordinatorRows.filter(
-      (item) => item.selected && !item.deleted_security_record,
+      (item) =>
+        item.selected && !item.deleted_security_record,
     );
 
     if (selectedRows.length === 0) {
-      setCoordinatorError("اختر منسقًا واحدًا على الأقل للمراجعة.");
+      setCoordinatorError(
+        "اختر منسقًا واحدًا على الأقل للمراجعة.",
+      );
       return;
     }
 
     const invalidRow = selectedRows.find(
       (item) =>
-        !item.national_id_number || !/^\d{14}$/.test(item.national_id_number),
+        !item.national_id_number ||
+        !/^\d{14}$/.test(item.national_id_number),
     );
 
     if (invalidRow) {
       setCoordinatorError(
-        `الرقم القومي غير صحيح للمنسق: ${invalidRow.name || "بدون اسم"}`,
+        `الرقم القومي غير صحيح للمنسق: ${
+          invalidRow.name || "بدون اسم"
+        }`,
       );
       return;
     }
@@ -727,22 +1019,43 @@ export default function SecurityManagement() {
     setCoordinatorSuccess("");
 
     try {
-      const result = await requestData("security/import-coordinators", "POST", {
-        national_ids: selectedRows.map((item) => item.national_id_number),
+      const result = await requestData(
+        "security/import-coordinators",
+        "POST",
+        {
+          national_ids: selectedRows.map(
+            (item) => item.national_id_number,
+          ),
 
-        reviews: selectedRows.map((item) => ({
-          national_id_number: item.national_id_number,
-          security_status: getNormalizedStatus(item.security_status),
-          notes: String(item.review_notes ?? "").trim(),
-        })),
-      });
+          reviews: selectedRows.map((item) => ({
+            national_id_number: item.national_id_number,
+
+            security_status: getNormalizedStatus(
+              item.security_status,
+            ),
+
+            notes: String(
+              item.review_notes ?? "",
+            ).trim(),
+          })),
+        },
+      );
 
       const imported =
-        result?.imported ?? result?.inserted ?? result?.added ?? 0;
+        result?.imported ??
+        result?.inserted ??
+        result?.added ??
+        0;
 
-      const updated = result?.updated ?? result?.reviewed ?? 0;
+      const updated =
+        result?.updated ??
+        result?.reviewed ??
+        0;
 
-      const skipped = result?.skipped ?? result?.existing ?? 0;
+      const skipped =
+        result?.skipped ??
+        result?.existing ??
+        0;
 
       setCoordinatorSuccess(
         `تمت معالجة ${selectedRows.length} منسق بنجاح. ` +
@@ -754,10 +1067,14 @@ export default function SecurityManagement() {
       await openCoordinatorReview();
       await loadRecords();
     } catch (err) {
-      console.error("Save/import coordinators error:", err);
+      console.error(
+        "Save/import coordinators error:",
+        err,
+      );
 
       setCoordinatorError(
-        err.message || "حدث خطأ أثناء حفظ مراجعة المنسقين وإضافتهم.",
+        err.message ||
+          "حدث خطأ أثناء حفظ مراجعة المنسقين وإضافتهم.",
       );
     } finally {
       setCoordinatorSaving(false);
@@ -776,10 +1093,12 @@ export default function SecurityManagement() {
     setSelectedEditKey("");
     setLoadingEditTargets(false);
     setEditTargetsError("");
+
     setForm({
       ...EMPTY_FORM,
       job: "عميل",
     });
+
     setFormError("");
     setError("");
     setSuccess("");
@@ -787,7 +1106,7 @@ export default function SecurityManagement() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Load All Records For The Selected Person                                 */
+  /* Edit Targets                                                             */
   /* ------------------------------------------------------------------------ */
 
   async function loadPersonEditTargets(item) {
@@ -799,7 +1118,9 @@ export default function SecurityManagement() {
 
     const encodedNationalId = encodeURIComponent(nationalId);
 
-    const data = await requestData(`security/national-id/${encodedNationalId}`);
+    const data = await requestData(
+      `security/national-id/${encodedNationalId}`,
+    );
 
     const person = data?.record;
 
@@ -809,24 +1130,28 @@ export default function SecurityManagement() {
 
     const normalizedPerson = normalizePersonRecord(person);
 
-    const incidents = Array.isArray(person.incidents)
-      ? person.incidents.map((incident) =>
-          normalizeIncidentRecord(incident, normalizedPerson),
-        )
-      : [];
+    const incidents = getRecordsArray(person.incidents).map(
+      (incident) =>
+        normalizeIncidentRecord(
+          incident,
+          normalizedPerson,
+        ),
+    );
 
-    const permits = Array.isArray(person.permits)
-      ? person.permits.map((permit) =>
-          normalizePermitRecord(permit, normalizedPerson),
-        )
-      : [];
+    const permits = getRecordsArray(person.permits).map(
+      (permit) =>
+        normalizePermitRecord(
+          permit,
+          normalizedPerson,
+        ),
+    );
 
-    return [normalizedPerson, ...incidents, ...permits];
+    return [
+      normalizedPerson,
+      ...incidents,
+      ...permits,
+    ];
   }
-
-  /* ------------------------------------------------------------------------ */
-  /* Edit Target Selection                                                    */
-  /* ------------------------------------------------------------------------ */
 
   function selectEditTarget(target) {
     if (!target || saving) return;
@@ -842,14 +1167,14 @@ export default function SecurityManagement() {
 
     setSelectedEditKey(key);
 
-    const target = editTargets.find((record) => getRecordKey(record) === key);
+    const target = editTargets.find(
+      (record) => getRecordKey(record) === key,
+    );
 
-    if (target) selectEditTarget(target);
+    if (target) {
+      selectEditTarget(target);
+    }
   }
-
-  /* ------------------------------------------------------------------------ */
-  /* Edit Modal                                                               */
-  /* ------------------------------------------------------------------------ */
 
   async function openEditModal(item) {
     if (!canEditSecurity) return;
@@ -858,6 +1183,7 @@ export default function SecurityManagement() {
     setSuccess("");
     setFormError("");
     setEditTargetsError("");
+
     setEditingRecord(item);
     setForm(buildFormFromRecord(item));
     setEditTargets([item]);
@@ -871,14 +1197,20 @@ export default function SecurityManagement() {
       setEditTargets(targets);
 
       const clickedType = getRecordType(item);
-      const clickedId = String(item.source_record_id ?? item.id ?? "");
+
+      const clickedId = String(
+        item.source_record_id ?? item.id ?? "",
+      );
 
       const initialTarget =
         targets.find((target) => {
-          const targetId = String(target.source_record_id ?? target.id ?? "");
+          const targetId = String(
+            target.source_record_id ?? target.id ?? "",
+          );
 
           return (
-            getRecordType(target) === clickedType && targetId === clickedId
+            getRecordType(target) === clickedType &&
+            targetId === clickedId
           );
         }) || targets[0];
 
@@ -886,7 +1218,10 @@ export default function SecurityManagement() {
         selectEditTarget(initialTarget);
       }
     } catch (err) {
-      console.error("Load related security records error:", err);
+      console.error(
+        "Load related security records error:",
+        err,
+      );
 
       setEditTargetsError(
         err.message ||
@@ -929,21 +1264,17 @@ export default function SecurityManagement() {
 
   function handleSelectChange(name, value, label = "") {
     const nameFields = {
-      company_name: "company_display_name",
-      advertising_company: "advertising_company_name",
-      branch: "branch_name",
+      incident_branch: "incident_branch_name",
     };
 
     setForm((previous) => ({
       ...previous,
+
       [name]: value,
+
       ...(nameFields[name] && {
         [nameFields[name]]: label,
       }),
-      ...(name === "branch" &&
-        editingPermit && {
-          permit_branch: value,
-        }),
     }));
   }
 
@@ -960,17 +1291,26 @@ export default function SecurityManagement() {
       return "الرقم القومي يجب أن يتكون من 14 رقمًا.";
     }
 
-    if (editingRecord && !JOB_OPTIONS.includes(form.job)) {
+    if (
+      editingRecord &&
+      !JOB_OPTIONS.includes(form.job)
+    ) {
       return "يرجى اختيار وظيفة صحيحة.";
     }
 
     if (
-      !SECURITY_STATUSES.includes(getNormalizedStatus(form.security_status))
+      !SECURITY_STATUSES.includes(
+        getNormalizedStatus(form.security_status),
+      )
     ) {
       return "يرجى اختيار موقف أمني صحيح.";
     }
 
-    if (!FILE_TYPE_OPTIONS.includes(getNormalizedFileType(form.file_type))) {
+    if (
+      !FILE_TYPE_OPTIONS.includes(
+        getNormalizedFileType(form.file_type),
+      )
+    ) {
       return "يرجى اختيار نوع ملف صحيح.";
     }
 
@@ -984,8 +1324,12 @@ export default function SecurityManagement() {
 
     if (
       form.value_of_stolen_goods !== "" &&
-      (!Number.isFinite(Number(form.value_of_stolen_goods)) ||
-        Number(form.value_of_stolen_goods) < 0)
+      (
+        !Number.isFinite(
+          Number(form.value_of_stolen_goods),
+        ) ||
+        Number(form.value_of_stolen_goods) < 0
+      )
     ) {
       return "يرجى إدخال قيمة صحيحة للبضاعة.";
     }
@@ -994,6 +1338,10 @@ export default function SecurityManagement() {
   }
 
   function validatePermitForm() {
+    if (!form.permit_number.trim()) {
+      return "يرجى إدخال رقم التصريح.";
+    }
+
     if (!form.permit_issue_date) {
       return "يرجى إدخال تاريخ إصدار التصريح.";
     }
@@ -1001,97 +1349,138 @@ export default function SecurityManagement() {
     return "";
   }
 
+  function validateCreateIncidentForm() {
+    const hasIncidentData =
+      form.stolen_goods.trim() !== "" ||
+      form.value_of_stolen_goods !== "" ||
+      form.incident_date !== "" ||
+      form.incident_branch !== "";
+
+    if (!hasIncidentData) return "";
+
+    return validateIncidentForm();
+  }
+
+  function validateCreatePermitForm() {
+    const hasPermitData =
+      form.permit_number.trim() !== "" ||
+      form.permit_issue_date !== "";
+
+    if (!hasPermitData) return "";
+
+    return validatePermitForm();
+  }
+
   /* ------------------------------------------------------------------------ */
-  /* Build Person Payload                                                     */
+  /* Payload Builders                                                         */
   /* ------------------------------------------------------------------------ */
 
   function buildPersonPayload() {
     return {
       name: form.name.trim(),
-      national_id_number: form.national_id_number.trim(),
+
+      national_id_number:
+        form.national_id_number.trim(),
+
       job: editingRecord ? form.job : "عميل",
-      company_name: form.company_name || null,
-      company_display_name: form.company_display_name || null,
-      advertising_company: form.advertising_company || null,
-      advertising_company_name: form.advertising_company_name || null,
-      branch: form.branch || null,
-      branch_name: form.branch_name || null,
+
       governorate: form.governorate || null,
-      file_type: getNormalizedFileType(form.file_type) || null,
-      security_status: getNormalizedStatus(form.security_status),
+
+      file_type:
+        getNormalizedFileType(form.file_type) || null,
+
+      security_status:
+        getNormalizedStatus(form.security_status),
+
       notes: form.notes || null,
+
+      birth_date: form.birth_date || null,
+
+      birth_place: form.birth_place.trim() || null,
+    };
+  }
+
+  function buildIncidentPayload() {
+    return {
+      stolen_goods:
+        form.stolen_goods.trim() || null,
+
+      value_of_stolen_goods:
+        form.value_of_stolen_goods === ""
+          ? null
+          : Number(form.value_of_stolen_goods),
+
+      incident_date: form.incident_date || null,
+
+      // فرع الواقعة مستقل تمامًا عن بيانات الشخص والتصريح.
+      incident_branch: form.incident_branch || null,
+
+      incident_notes:
+        form.notes.trim() || null,
+    };
+  }
+
+  function buildPermitPayload() {
+    return {
+      permit_number:
+        form.permit_number.trim() || null,
+
+      permit_issue_date:
+        form.permit_issue_date || null,
+
+      permit_notes:
+        form.notes.trim() || null,
     };
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Update Incident                                                          */
+  /* Update Operations                                                        */
   /* ------------------------------------------------------------------------ */
 
   async function updateIncident() {
-    const incidentId = editingRecord.source_record_id ?? editingRecord.id;
+    const incidentId =
+      editingRecord.source_record_id ??
+      editingRecord.id;
 
     if (!incidentId) {
       throw new Error("رقم الواقعة غير موجود.");
     }
 
-    const payload = {
-      incident_branch: form.branch || null,
-      stolen_goods: form.stolen_goods || null,
-      value_of_stolen_goods:
-        form.value_of_stolen_goods === ""
-          ? null
-          : Number(form.value_of_stolen_goods),
-      incident_date: form.incident_date || null,
-      incident_notes: form.notes || null,
-    };
-
     await requestData(
       `security/incidents/${encodeURIComponent(incidentId)}`,
       "PUT",
-      payload,
+      buildIncidentPayload(),
     );
 
     setSuccess("تم تعديل الواقعة بنجاح.");
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Update Permit                                                            */
-  /* ------------------------------------------------------------------------ */
-
   async function updatePermit() {
-    const permitId = editingRecord.source_record_id ?? editingRecord.id;
+    const permitId =
+      editingRecord.source_record_id ??
+      editingRecord.id;
 
     if (!permitId) {
       throw new Error("رقم التصريح غير موجود.");
     }
 
-    const payload = {
-      permit_number: form.permit_number || null,
-      permit_company_name: form.permit_company_name || null,
-      permit_issue_date: form.permit_issue_date || null,
-      permit_branch: form.branch || null,
-      permit_notes: form.notes || null,
-    };
-
     await requestData(
       `security/permits/${encodeURIComponent(permitId)}`,
       "PUT",
-      payload,
+      buildPermitPayload(),
     );
 
     setSuccess("تم تعديل التصريح بنجاح.");
   }
-
-  /* ------------------------------------------------------------------------ */
-  /* Update Person                                                            */
-  /* ------------------------------------------------------------------------ */
 
   async function updatePerson() {
     if (!editingRecord.national_id_number) {
       throw new Error("الرقم القومي للشخص غير موجود.");
     }
 
-    const nationalId = encodeURIComponent(editingRecord.national_id_number);
+    const nationalId = encodeURIComponent(
+      editingRecord.national_id_number,
+    );
 
     await requestData(
       `security/national-id/${nationalId}`,
@@ -1103,7 +1492,33 @@ export default function SecurityManagement() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Create / Update                                                          */
+  /* Create Operation                                                         */
+  /* ------------------------------------------------------------------------ */
+
+  async function createSecurityRecord() {
+    const payload = {
+      ...buildPersonPayload(),
+
+      job: "عميل",
+
+      ...buildIncidentPayload(),
+
+      ...buildPermitPayload(),
+    };
+
+    await requestData(
+      "security",
+      "POST",
+      payload,
+    );
+
+    setSuccess(
+      "تمت إضافة العميل والبيانات المرتبطة به بنجاح.",
+    );
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Submit Form                                                              */
   /* ------------------------------------------------------------------------ */
 
   async function handleSubmit(event) {
@@ -1129,8 +1544,13 @@ export default function SecurityManagement() {
       validationError = validateIncidentForm();
     } else if (editingPermit) {
       validationError = validatePermitForm();
-    } else {
+    } else if (editingPerson) {
       validationError = validatePersonForm();
+    } else {
+      validationError =
+        validatePersonForm() ||
+        validateCreateIncidentForm() ||
+        validateCreatePermitForm();
     }
 
     if (validationError) {
@@ -1148,20 +1568,10 @@ export default function SecurityManagement() {
       } else if (editingPerson) {
         await updatePerson();
       } else {
-        await requestData("security", "POST", {
-          ...buildPersonPayload(),
-          job: "عميل",
-          stolen_goods: null,
-          value_of_stolen_goods: null,
-          incident_date: null,
-          permit_number: null,
-          permit_company_name: null,
-          permit_issue_date: null,
-          permit_branch: null,
-        });
-
-        setSuccess("تمت إضافة العميل بنجاح.");
+        await createSecurityRecord();
       }
+
+      const wasCreating = !editingRecord;
 
       setModalOpen(false);
       setEditingRecord(null);
@@ -1169,7 +1579,7 @@ export default function SecurityManagement() {
       setSelectedEditKey("");
       setForm({ ...EMPTY_FORM });
 
-      if (!editingRecord && page !== 1) {
+      if (wasCreating && page !== 1) {
         setPage(1);
       } else {
         await loadRecords();
@@ -1177,14 +1587,16 @@ export default function SecurityManagement() {
     } catch (err) {
       console.error("Save security record error:", err);
 
-      setFormError(err.message || "تعذر حفظ بيانات السجل.");
+      setFormError(
+        err.message || "تعذر حفظ بيانات السجل.",
+      );
     } finally {
       setSaving(false);
     }
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Disable Person                                                           */
+  /* Delete Operation                                                         */
   /* ------------------------------------------------------------------------ */
 
   async function handleDelete(item) {
@@ -1193,7 +1605,9 @@ export default function SecurityManagement() {
     }
 
     if (!item.national_id_number) {
-      setError("لا يمكن تعطيل السجل لعدم وجود رقم قومي.");
+      setError(
+        "لا يمكن تعطيل السجل لعدم وجود رقم قومي.",
+      );
       return;
     }
 
@@ -1213,28 +1627,37 @@ export default function SecurityManagement() {
     setSuccess("");
 
     try {
-      const nationalId = encodeURIComponent(item.national_id_number);
+      const nationalId = encodeURIComponent(
+        item.national_id_number,
+      );
 
-      await requestData(`security/national-id/${nationalId}`, "DELETE");
+      await requestData(
+        `security/national-id/${nationalId}`,
+        "DELETE",
+      );
 
       setSuccess("تم تعطيل سجل الشخص بنجاح.");
 
       if (rows.length === 1 && page > 1) {
-        setPage((previous) => Math.max(1, previous - 1));
+        setPage((previous) =>
+          Math.max(1, previous - 1),
+        );
       } else {
         await loadRecords();
       }
     } catch (err) {
       console.error("Delete security record error:", err);
 
-      setError(err.message || "تعذر تعطيل سجل الشخص.");
+      setError(
+        err.message || "تعذر تعطيل سجل الشخص.",
+      );
     } finally {
       setDeletingId(null);
     }
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Filters                                                                  */
+  /* Filter Handlers                                                          */
   /* ------------------------------------------------------------------------ */
 
   function handleClearFilters() {
@@ -1300,9 +1723,13 @@ export default function SecurityManagement() {
           break;
       }
 
-      if (isIncident(item)) counts.incidents++;
+      counts.incidents +=
+        getPersonIncidents(item).length ||
+        (isIncident(item) ? 1 : 0);
 
-      if (isPermit(item)) counts.permits++;
+      counts.permits +=
+        getPersonPermits(item).length ||
+        (isPermit(item) ? 1 : 0);
     });
 
     return counts;
@@ -1341,7 +1768,7 @@ export default function SecurityManagement() {
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Render                                                                   */
+  /* Main UI                                                                   */
   /* ------------------------------------------------------------------------ */
 
   return (
@@ -1353,7 +1780,9 @@ export default function SecurityManagement() {
 
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-orange-700">إدارة الأمن</h1>
+            <h1 className="text-2xl font-bold text-orange-700">
+              إدارة الأمن
+            </h1>
 
             <p className="mt-1 text-sm text-gray-500">
               إدارة ومتابعة بيانات الأشخاص والوقائع والتصاريح والمواقف الأمنية
@@ -1369,15 +1798,17 @@ export default function SecurityManagement() {
               العودة لنظام التسويق
             </button>
 
-            {canViewSecurity && canEditSecurity && canCreateSecurity && (
-              <button
-                type="button"
-                onClick={openCoordinatorReview}
-                className="rounded-lg bg-blue-600 px-5 py-2.5 font-semibold text-white shadow hover:bg-blue-700"
-              >
-                جلب ومراجعة المنسقين
-              </button>
-            )}
+            {canViewSecurity &&
+              canEditSecurity &&
+              canCreateSecurity && (
+                <button
+                  type="button"
+                  onClick={openCoordinatorReview}
+                  className="rounded-lg bg-blue-600 px-5 py-2.5 font-semibold text-white shadow hover:bg-blue-700"
+                >
+                  جلب ومراجعة المنسقين
+                </button>
+              )}
 
             {canCreateSecurity && (
               <button
@@ -1425,19 +1856,19 @@ export default function SecurityManagement() {
 
         <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
           <StatCard
-            title="إجمالي السجلات"
+            title="إجمالي الأشخاص"
             value={pagination.total}
             color="orange"
           />
 
           <StatCard
-            title="الوقائع - الصفحة الحالية"
+            title="إجمالي الوقائع - الصفحة الحالية"
             value={statistics.incidents}
             color="red"
           />
 
           <StatCard
-            title="التصاريح - الصفحة الحالية"
+            title="إجمالي التصاريح - الصفحة الحالية"
             value={statistics.permits}
             color="blue"
           />
@@ -1468,14 +1899,18 @@ export default function SecurityManagement() {
             <input
               type="text"
               value={search}
-              onChange={(event) => handleSearchChange(event.target.value)}
+              onChange={(event) =>
+                handleSearchChange(event.target.value)
+              }
               placeholder="بحث بالاسم أو الرقم القومي أو السبب أو التصريح..."
               className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-orange-500"
             />
 
             <select
               value={jobFilter}
-              onChange={(event) => handleJobChange(event.target.value)}
+              onChange={(event) =>
+                handleJobChange(event.target.value)
+              }
               className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-orange-500"
             >
               <option value="">كل الوظائف</option>
@@ -1489,7 +1924,9 @@ export default function SecurityManagement() {
 
             <select
               value={statusFilter}
-              onChange={(event) => handleStatusChange(event.target.value)}
+              onChange={(event) =>
+                handleStatusChange(event.target.value)
+              }
               className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-orange-500"
             >
               <option value="">كل المواقف الأمنية</option>
@@ -1503,12 +1940,16 @@ export default function SecurityManagement() {
 
             <select
               value={fileTypeFilter}
-              onChange={(event) => handleFileTypeChange(event.target.value)}
+              onChange={(event) =>
+                handleFileTypeChange(event.target.value)
+              }
               className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-orange-500"
             >
               <option value="">كل أنواع الملفات</option>
               <option value="25">25</option>
-              <option value="مناديب/منسقين">مناديب/منسقين</option>
+              <option value="مناديب/منسقين">
+                مناديب/منسقين
+              </option>
             </select>
 
             <button
@@ -1525,10 +1966,12 @@ export default function SecurityManagement() {
 
         <div className="w-full min-w-0 overflow-hidden rounded-xl bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b p-4">
-            <h2 className="font-bold text-gray-800">سجلات الأمن</h2>
+            <h2 className="font-bold text-gray-800">
+              سجلات الأمن
+            </h2>
 
             <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
-              <span>إجمالي النتائج: {pagination.total}</span>
+              <span>إجمالي الأشخاص: {pagination.total}</span>
               <span>حجم الصفحة: {PAGE_SIZE}</span>
             </div>
           </div>
@@ -1547,13 +1990,13 @@ export default function SecurityManagement() {
                     "الوظيفة",
                     "الشركة الأم",
                     "شركة الدعاية",
-                    "الفرع",
+                    "المنطقة",
                     "المحافظة",
+                    "فرع الواقعة",
                     "البضاعة المسروقة",
                     "قيمة البضاعة",
                     "تاريخ الواقعة",
                     "رقم التصريح",
-                    "شركة التصريح",
                     "تاريخ إصدار التصريح",
                     "نوع الملف",
                     "الموقف الأمني",
@@ -1598,7 +2041,9 @@ export default function SecurityManagement() {
                         key={recordKey}
                         className="transition hover:bg-gray-50"
                       >
-                        <td className="sticky right-0 z-1 whitespace-nowrap bg-white px-4 py-3">
+                        {/* Actions */}
+
+                        <td className="sticky right-0 z-[1] whitespace-nowrap bg-white px-4 py-3">
                           {canEditSecurity && (
                             <button
                               type="button"
@@ -1624,10 +2069,15 @@ export default function SecurityManagement() {
                             </button>
                           )}
 
-                          {!canEditSecurity && !canDeleteSecurity && (
-                            <span className="text-gray-400">-</span>
-                          )}
+                          {!canEditSecurity &&
+                            !canDeleteSecurity && (
+                              <span className="text-gray-400">
+                                -
+                              </span>
+                            )}
                         </td>
+
+                        {/* Person */}
 
                         <td className="whitespace-nowrap px-4 py-3 font-semibold">
                           {item.name || "-"}
@@ -1637,46 +2087,67 @@ export default function SecurityManagement() {
                           {item.national_id_number || "-"}
                         </td>
 
-                        <td className="px-4 py-3">{item.job || "-"}</td>
+                        <td className="px-4 py-3">
+                          {item.job || "-"}
+                        </td>
 
-                        <td className="px-4 py-3">{getCompanyName(item)}</td>
+                        {/* البيانات القديمة تظل ظاهرة من قاعدة البيانات */}
+
+                        <td className="px-4 py-3">
+                          {getCompanyName(item)}
+                        </td>
 
                         <td className="px-4 py-3">
                           {getAdvertisingCompanyName(item)}
                         </td>
 
-                        <td className="px-4 py-3">{getBranchName(item)}</td>
-
-                        <td className="px-4 py-3">{item.governorate || "-"}</td>
-
-                        <td className="w-62.5 min-w-62.5 px-4 py-3 align-top">
-                          <div className="whitespace-pre-wrap wrap-break-word leading-7">
-                            {item.stolen_goods || "-"}
-                          </div>
-                        </td>
-
-                        <td className="whitespace-nowrap px-4 py-3">
-                          {item.value_of_stolen_goods ?? "-"}
-                        </td>
-
-                        <td className="whitespace-nowrap px-4 py-3">
-                          {getDateInputValue(item.incident_date)}
-                        </td>
-
-                        <td className="whitespace-nowrap px-4 py-3">
-                          {item.permit_number || "-"}
+                        <td className="px-4 py-3">
+                          {getAreaName(item)}
                         </td>
 
                         <td className="px-4 py-3">
-                          {item.permit_company_name || "-"}
+                          {item.governorate || "-"}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-3">
-                          {getDateInputValue(item.issue_date)}
+                        {/* Incident */}
+
+                        <td className="min-w-45 px-4 py-3 align-top">
+                          <div className="whitespace-pre-wrap leading-7">
+                            {getIncidentBranches(
+                              item,
+                              branchOptions,
+                            )}
+                          </div>
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-3 font-semibold">
-                          {getFileType(item)}
+                        <td className="w-62.5 min-w-62.5 px-4 py-3 align-top">
+                          <div className="whitespace-pre-wrap wrap-break-word leading-7">
+                            {getIncidentGoods(item)}
+                          </div>
+                        </td>
+
+                        <td className="whitespace-pre-wrap px-4 py-3 align-top">
+                          {getIncidentValues(item)}
+                        </td>
+
+                        <td className="whitespace-pre-wrap px-4 py-3 align-top">
+                          {getIncidentDates(item)}
+                        </td>
+
+                        {/* Permit */}
+
+                        <td className="whitespace-pre-wrap px-4 py-3 align-top">
+                          {getPermitNumbers(item)}
+                        </td>
+
+                        <td className="whitespace-pre-wrap px-4 py-3 align-top">
+                          {getPermitDates(item)}
+                        </td>
+
+                        {/* Security */}
+
+                        <td className="whitespace-pre-wrap px-4 py-3 font-semibold">
+                          {getAllFileTypes(item)}
                         </td>
 
                         <td className="px-4 py-3">
@@ -1688,11 +2159,8 @@ export default function SecurityManagement() {
                         </td>
 
                         <td className="w-87.5 min-w-87.5 max-w-87.5 px-4 py-3 align-top">
-                          <div
-                            className="whitespace-pre-wrap wrap-break-word leading-7"
-                            title={item.notes || ""}
-                          >
-                            {item.notes || "-"}
+                          <div className="whitespace-pre-wrap wrap-break-word leading-7">
+                            {getAllSecurityNotes(item)}
                           </div>
                         </td>
                       </tr>
@@ -1713,10 +2181,13 @@ export default function SecurityManagement() {
                 <>
                   عرض {(page - 1) * PAGE_SIZE + 1}
                   {" - "}
-                  {Math.min(page * PAGE_SIZE, pagination.total)}
+                  {Math.min(
+                    page * PAGE_SIZE,
+                    pagination.total,
+                  )}
                   {" من "}
                   {pagination.total}
-                  {" سجل"}
+                  {" شخص"}
                 </>
               )}
             </div>
@@ -1724,21 +2195,32 @@ export default function SecurityManagement() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                disabled={!pagination.hasPreviousPage || loading}
-                onClick={() => setPage((previous) => Math.max(1, previous - 1))}
+                disabled={
+                  !pagination.hasPreviousPage || loading
+                }
+                onClick={() =>
+                  setPage((previous) =>
+                    Math.max(1, previous - 1),
+                  )
+                }
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 السابق
               </button>
 
               <span className="px-3 text-sm font-semibold text-gray-700">
-                صفحة {page} من {Math.max(1, pagination.totalPages)}
+                صفحة {page} من{" "}
+                {Math.max(1, pagination.totalPages)}
               </span>
 
               <button
                 type="button"
-                disabled={!pagination.hasNextPage || loading}
-                onClick={() => setPage((previous) => previous + 1)}
+                disabled={
+                  !pagination.hasNextPage || loading
+                }
+                onClick={() =>
+                  setPage((previous) => previous + 1)
+                }
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 التالي
@@ -1753,10 +2235,8 @@ export default function SecurityManagement() {
       {/* ------------------------------------------------------------------ */}
 
       {coordinatorModalOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-3 sm:p-5">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-3 sm:p-5">
           <div className="flex max-h-[94vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-            {/* Header */}
-
             <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4 sm:p-5">
               <div>
                 <h2 className="text-xl font-bold text-blue-700">
@@ -1764,8 +2244,7 @@ export default function SecurityManagement() {
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-500">
-                  راجع الموقف الأمني وأضف ملاحظات قبل إدخال الأشخاص إلى سجلات
-                  الأمن.
+                  راجع الموقف الأمني وأضف ملاحظات قبل إدخال الأشخاص إلى سجلات الأمن.
                 </p>
               </div>
 
@@ -1783,8 +2262,6 @@ export default function SecurityManagement() {
               </button>
             </div>
 
-            {/* Messages */}
-
             <div className="space-y-3 px-4 pt-4 sm:px-5">
               {coordinatorError && (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -1799,13 +2276,13 @@ export default function SecurityManagement() {
               )}
             </div>
 
-            {/* Toolbar */}
-
             <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4 sm:px-5">
               <input
                 type="search"
                 value={coordinatorSearch}
-                onChange={(event) => setCoordinatorSearch(event.target.value)}
+                onChange={(event) =>
+                  setCoordinatorSearch(event.target.value)
+                }
                 placeholder="بحث بالاسم أو الرقم القومي أو الوظيفة أو النوع..."
                 className="min-w-55 flex-1 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
               />
@@ -1820,8 +2297,6 @@ export default function SecurityManagement() {
                 </span>
               </div>
             </div>
-
-            {/* Table */}
 
             <div className="min-h-0 flex-1 overflow-auto">
               {coordinatorLoading ? (
@@ -1843,17 +2318,21 @@ export default function SecurityManagement() {
                             coordinatorRows.length > 0 &&
                             coordinatorRows.every(
                               (item) =>
-                                item.selected || item.deleted_security_record,
+                                item.selected ||
+                                item.deleted_security_record,
                             )
                           }
                           onChange={(event) => {
-                            const checked = event.target.checked;
+                            const checked =
+                              event.target.checked;
 
                             setCoordinatorRows((previous) =>
                               previous.map((item) => ({
                                 ...item,
+
                                 selected:
-                                  checked && !item.deleted_security_record,
+                                  checked &&
+                                  !item.deleted_security_record,
                               })),
                             );
                           }}
@@ -1861,25 +2340,37 @@ export default function SecurityManagement() {
                         />
                       </th>
 
-                      <th className="whitespace-nowrap px-3 py-3">الاسم</th>
+                      <th className="whitespace-nowrap px-3 py-3">
+                        الاسم
+                      </th>
 
                       <th className="whitespace-nowrap px-3 py-3">
                         الرقم القومي
                       </th>
 
-                      <th className="whitespace-nowrap px-3 py-3">الوظيفة</th>
+                      <th className="whitespace-nowrap px-3 py-3">
+                        الوظيفة
+                      </th>
 
-                      {/* مصدر السجل: أساسي أو مؤقت */}
+                      <th className="whitespace-nowrap px-3 py-3">
+                        النوع
+                      </th>
 
-                      <th className="whitespace-nowrap px-3 py-3">النوع</th>
+                      <th className="whitespace-nowrap px-3 py-3">
+                        الشركة
+                      </th>
 
-                      <th className="whitespace-nowrap px-3 py-3">الشركة</th>
+                      <th className="whitespace-nowrap px-3 py-3">
+                        الفرع
+                      </th>
 
-                      <th className="whitespace-nowrap px-3 py-3">الفرع</th>
+                      <th className="min-w-45 px-3 py-3">
+                        الموقف الأمني
+                      </th>
 
-                      <th className="min-w-45 px-3 py-3">الموقف الأمني</th>
-
-                      <th className="min-w-70 px-3 py-3">ملاحظات جديدة</th>
+                      <th className="min-w-70 px-3 py-3">
+                        ملاحظات جديدة
+                      </th>
 
                       <th className="whitespace-nowrap px-3 py-3">
                         حالة الاستيراد
@@ -1889,8 +2380,12 @@ export default function SecurityManagement() {
 
                   <tbody className="divide-y divide-gray-100">
                     {filteredCoordinatorRows.map((item) => {
-                      const disabled = Boolean(item.deleted_security_record);
-                      const sourceType = getCoordinatorSourceType(item);
+                      const disabled = Boolean(
+                        item.deleted_security_record,
+                      );
+
+                      const sourceType =
+                        getCoordinatorSourceType(item);
 
                       return (
                         <tr
@@ -1903,7 +2398,9 @@ export default function SecurityManagement() {
                             <input
                               type="checkbox"
                               checked={Boolean(item.selected)}
-                              disabled={disabled || coordinatorSaving}
+                              disabled={
+                                disabled || coordinatorSaving
+                              }
                               onChange={(event) =>
                                 updateCoordinatorReviewRow(
                                   item.national_id_number,
@@ -1926,8 +2423,6 @@ export default function SecurityManagement() {
                             {item.job || "-"}
                           </td>
 
-                          {/* أساسي / مؤقت */}
-
                           <td className="whitespace-nowrap px-3 py-3">
                             <span
                               className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getCoordinatorSourceStyle(item)}`}
@@ -1941,14 +2436,18 @@ export default function SecurityManagement() {
                           </td>
 
                           <td className="whitespace-nowrap px-3 py-3">
-                            {item.branch_name || item.branch || "-"}
+                            {item.branch_name ||
+                              item.branch ||
+                              "-"}
                           </td>
 
                           <td className="px-3 py-3">
                             <select
                               value={item.security_status}
                               disabled={
-                                disabled || !item.selected || coordinatorSaving
+                                disabled ||
+                                !item.selected ||
+                                coordinatorSaving
                               }
                               onChange={(event) =>
                                 updateCoordinatorReviewRow(
@@ -1959,15 +2458,20 @@ export default function SecurityManagement() {
                               }
                               className="w-full rounded-lg border border-gray-300 bg-white px-2 py-2 outline-none focus:border-blue-500 disabled:bg-gray-100"
                             >
-                              {SECURITY_STATUSES.map((status) => (
-                                <option key={status} value={status}>
-                                  {status}
-                                </option>
-                              ))}
+                              {SECURITY_STATUSES.map(
+                                (status) => (
+                                  <option
+                                    key={status}
+                                    value={status}
+                                  >
+                                    {status}
+                                  </option>
+                                ),
+                              )}
                             </select>
                           </td>
 
-                          <td className="px-3 py-3 min-w-70">
+                          <td className="min-w-70 px-3 py-3">
                             <textarea
                               value={
                                 item.review_notes ??
@@ -1975,24 +2479,29 @@ export default function SecurityManagement() {
                                 item.security_notes ??
                                 ""
                               }
-                              onChange={(e) => {
-                                const value = e.target.value;
+                              onChange={(event) => {
+                                const value =
+                                  event.target.value;
 
-                                setCoordinatorRows((previous) =>
-                                  previous.map((row) =>
-                                    row.national_id_number ===
-                                    item.national_id_number
-                                      ? { ...row, review_notes: value }
-                                      : row,
-                                  ),
+                                setCoordinatorRows(
+                                  (previous) =>
+                                    previous.map((row) =>
+                                      row.national_id_number ===
+                                      item.national_id_number
+                                        ? {
+                                            ...row,
+                                            review_notes: value,
+                                          }
+                                        : row,
+                                    ),
                                 );
                               }}
                               disabled={
-                                Boolean(item.deleted_security_record) ||
+                                disabled ||
                                 !item.selected ||
                                 coordinatorSaving
                               }
-                              placeholder="لا توجد ملاحظات سابقة، اكتب الملاحظات هنا..."
+                              placeholder="اكتب الملاحظات هنا..."
                               rows={3}
                               className="w-full min-w-85 rounded-lg border border-gray-300 bg-white p-3 text-sm text-gray-800 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 disabled:bg-gray-100"
                             />
@@ -2032,20 +2541,20 @@ export default function SecurityManagement() {
               )}
             </div>
 
-            {/* Footer */}
-
             <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-gray-50 p-4 sm:px-5">
               <p className="text-xs leading-6 text-gray-500">
                 سيتم حفظ مراجعة الأشخاص المحددين وإضافة السجلات الجديدة فقط.
-                سيتم تحديث موقف وملاحظات السجلات الموجودة بالفعل دون إنشاء سجل
-                أمني مكرر. لا يتم إنشاء وقائع أو تصاريح تلقائيًا.
+                سيتم تحديث موقف وملاحظات السجلات الموجودة بالفعل دون إنشاء سجل أمني مكرر.
+                لا يتم إنشاء وقائع أو تصاريح تلقائيًا.
               </p>
 
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={openCoordinatorReview}
-                  disabled={coordinatorLoading || coordinatorSaving}
+                  disabled={
+                    coordinatorLoading || coordinatorSaving
+                  }
                   className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
                 >
                   إعادة تحميل
@@ -2096,6 +2605,8 @@ export default function SecurityManagement() {
             </div>
 
             <form onSubmit={handleSubmit} className="p-5">
+              {/* Edit Target Selector */}
+
               {editingRecord && (
                 <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 p-4">
                   <label className="mb-2 block text-sm font-bold text-gray-800">
@@ -2116,7 +2627,9 @@ export default function SecurityManagement() {
                       {editTargets.map((target) => {
                         const type = getRecordType(target);
 
-                        const id = target.source_record_id ?? target.id;
+                        const id =
+                          target.source_record_id ??
+                          target.id;
 
                         let label = "بيانات الشخص";
 
@@ -2144,14 +2657,16 @@ export default function SecurityManagement() {
                     </p>
                   )}
 
-                  {!loadingEditTargets && !editTargetsError && (
-                    <p className="mt-2 text-xs text-gray-600">
-                      يمكنك التبديل بين بيانات الشخص وجميع الوقائع والتصاريح
-                      المرتبطة به.
-                    </p>
-                  )}
+                  {!loadingEditTargets &&
+                    !editTargetsError && (
+                      <p className="mt-2 text-xs text-gray-600">
+                        يمكنك التبديل بين بيانات الشخص وجميع الوقائع والتصاريح المرتبطة به.
+                      </p>
+                    )}
                 </div>
               )}
+
+              {/* Form Error */}
 
               {formError && (
                 <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">
@@ -2160,6 +2675,8 @@ export default function SecurityManagement() {
               )}
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {/* Person Fields */}
+
                 {showPersonFields && (
                   <>
                     <FormField label="الاسم" required>
@@ -2214,6 +2731,16 @@ export default function SecurityManagement() {
                       )}
                     </FormField>
 
+                    <FormField label="المنطقة">
+                      <input
+                        name="area"
+                        value={form.area || ""}
+                        onChange={handleChange}
+                        placeholder="اسم المنطقة"
+                        className="form-input"
+                      />
+                    </FormField>
+
                     <FormField label="المحافظة">
                       <select
                         name="governorate"
@@ -2224,7 +2751,10 @@ export default function SecurityManagement() {
                         <option value="">اختر المحافظة</option>
 
                         {GOVERNORATES.map((governorate) => (
-                          <option key={governorate} value={governorate}>
+                          <option
+                            key={governorate}
+                            value={governorate}
+                          >
                             {governorate}
                           </option>
                         ))}
@@ -2241,7 +2771,10 @@ export default function SecurityManagement() {
                         <option value="">اختر نوع الملف</option>
 
                         {FILE_TYPE_OPTIONS.map((fileType) => (
-                          <option key={fileType} value={fileType}>
+                          <option
+                            key={fileType}
+                            value={fileType}
+                          >
                             {fileType}
                           </option>
                         ))}
@@ -2251,7 +2784,9 @@ export default function SecurityManagement() {
                     <FormField label="الموقف الأمني">
                       <select
                         name="security_status"
-                        value={getNormalizedStatus(form.security_status)}
+                        value={getNormalizedStatus(
+                          form.security_status,
+                        )}
                         onChange={handleChange}
                         className="form-input"
                       >
@@ -2262,32 +2797,69 @@ export default function SecurityManagement() {
                         ))}
                       </select>
                     </FormField>
+
+                    <FormField label="تاريخ الميلاد">
+                      <input
+                        type="date"
+                        name="birth_date"
+                        value={form.birth_date}
+                        onChange={handleChange}
+                        className="form-input"
+                      />
+                    </FormField>
+
+                    <FormField label="محل الميلاد">
+                      <input
+                        type="text"
+                        name="birth_place"
+                        value={form.birth_place}
+                        onChange={handleChange}
+                        placeholder="أدخل محل الميلاد"
+                        className="form-input"
+                      />
+                    </FormField>
                   </>
                 )}
 
-                {(showPersonFields || editingIncident || editingPermit) && (
-                  <FormField label="الفرع">
-                    <SearchableSelect
-                      options={branchOptions}
-                      value={form.branch}
-                      onChange={(value, option) =>
-                        handleSelectChange("branch", value, option?.label || "")
-                      }
-                      placeholder="اختر الفرع"
-                      isDisabled={optionsLoading}
-                      isClearable
-                    />
-                  </FormField>
-                )}
+                {/* Incident Fields */}
 
                 {showIncidentFields && (
                   <>
+                    <div className="md:col-span-2 lg:col-span-3">
+                      <div className="mb-1 border-b border-red-100 pb-2">
+                        <h3 className="font-bold text-red-700">
+                          بيانات الواقعة والبضاعة المسروقة
+                        </h3>
+
+                        <p className="mt-1 text-xs text-gray-500">
+                          فرع الواقعة مستقل عن بيانات الشخص.
+                        </p>
+                      </div>
+                    </div>
+
+                    <FormField label="فرع الواقعة">
+                      <SearchableSelect
+                        options={branchOptions}
+                        value={form.incident_branch}
+                        onChange={(value, option) =>
+                          handleSelectChange(
+                            "incident_branch",
+                            value,
+                            option?.label || "",
+                          )
+                        }
+                        placeholder="اختر فرع الواقعة"
+                        isDisabled={optionsLoading}
+                        isClearable
+                      />
+                    </FormField>
+
                     <FormField label="البضاعة المسروقة">
                       <input
                         name="stolen_goods"
                         value={form.stolen_goods}
                         onChange={handleChange}
-                        placeholder="اسم البضاعة"
+                        placeholder="اسم البضاعة المسروقة"
                         className="form-input"
                       />
                     </FormField>
@@ -2305,7 +2877,7 @@ export default function SecurityManagement() {
                       />
                     </FormField>
 
-                    <FormField label="تاريخ الواقعة" required>
+                    <FormField label="تاريخ الواقعة">
                       <input
                         name="incident_date"
                         type="date"
@@ -2317,8 +2889,22 @@ export default function SecurityManagement() {
                   </>
                 )}
 
-                {editingPermit && (
+                {/* Permit Fields */}
+
+                {showPermitFields && (
                   <>
+                    <div className="md:col-span-2 lg:col-span-3">
+                      <div className="mb-1 mt-3 border-b border-blue-100 pb-2">
+                        <h3 className="font-bold text-blue-700">
+                          بيانات التصريح
+                        </h3>
+
+                        <p className="mt-1 text-xs text-gray-500">
+                          بيانات التصريح تشمل رقم التصريح وتاريخ إصداره فقط.
+                        </p>
+                      </div>
+                    </div>
+
                     <FormField label="رقم التصريح">
                       <input
                         name="permit_number"
@@ -2329,17 +2915,7 @@ export default function SecurityManagement() {
                       />
                     </FormField>
 
-                    <FormField label="شركة التصريح">
-                      <input
-                        name="permit_company_name"
-                        value={form.permit_company_name}
-                        onChange={handleChange}
-                        placeholder="اسم الشركة"
-                        className="form-input"
-                      />
-                    </FormField>
-
-                    <FormField label="تاريخ إصدار التصريح" required>
+                    <FormField label="تاريخ إصدار التصريح">
                       <input
                         name="permit_issue_date"
                         type="date"
@@ -2350,6 +2926,8 @@ export default function SecurityManagement() {
                     </FormField>
                   </>
                 )}
+
+                {/* Notes */}
 
                 <div className="md:col-span-2 lg:col-span-3">
                   <FormField label="ملاحظات">
@@ -2364,6 +2942,8 @@ export default function SecurityManagement() {
                   </FormField>
                 </div>
               </div>
+
+              {/* Buttons */}
 
               <div className="mt-6 flex flex-wrap justify-end gap-2 border-t pt-4">
                 <button
@@ -2441,7 +3021,9 @@ function FormField({ label, required = false, children }) {
       <label className="mb-1.5 block text-sm font-semibold text-gray-700">
         {label}
 
-        {required && <span className="mr-1 text-red-500">*</span>}
+        {required && (
+          <span className="mr-1 text-red-500">*</span>
+        )}
       </label>
 
       {children}
@@ -2467,7 +3049,9 @@ function StatCard({ title, value, color }) {
     >
       <p className="text-sm text-gray-500">{title}</p>
 
-      <p className="mt-2 text-2xl font-bold">{value}</p>
+      <p className="mt-2 text-2xl font-bold">
+        {value}
+      </p>
     </div>
   );
 }
