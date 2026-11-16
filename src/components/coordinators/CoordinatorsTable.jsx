@@ -69,7 +69,7 @@ export default function CoordinatorsTable({
                 </thead>
 
                 <tbody>
-                    {coordinators.map((coordinator) => {
+                    {[...coordinators].reverse().map((coordinator) => {
                         const inactive =
                             String(coordinator.states ?? "").trim() ===
                             "غير مفعل";
