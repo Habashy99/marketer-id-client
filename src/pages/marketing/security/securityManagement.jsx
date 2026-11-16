@@ -477,31 +477,50 @@ function getPermitDates(item) {
   );
 }
 
+
 function getAllSecurityNotes(item) {
   const notes = [];
+  const seenNotes = new Set();
 
-  if (item.notes) {
-    notes.push(String(item.notes));
+  // توحيد شكل النص قبل المقارنة
+  function normalizeNote(value) {
+    return String(value ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
   }
 
+  function addNote(value, label = "") {
+    const originalText = String(value ?? "").trim();
+    const normalizedText = normalizeNote(originalText);
+
+    if (!normalizedText || seenNotes.has(normalizedText)) {
+      return;
+    }
+
+    seenNotes.add(normalizedText);
+
+    notes.push(
+      label ? `${label}: ${originalText}` : originalText
+    );
+  }
+
+  // الملاحظات العامة للشخص
+  addNote(item.notes);
+
+  // ملاحظات الوقائع
   getPersonIncidents(item).forEach((incident, index) => {
-    if (incident.notes) {
-      notes.push(
-        `الواقعة ${index + 1}: ${incident.notes}`,
-      );
-    }
+    addNote(incident.notes, `الواقعة ${index + 1}`);
   });
 
+  // ملاحظات التصاريح
   getPersonPermits(item).forEach((permit, index) => {
-    if (permit.notes) {
-      notes.push(
-        `التصريح ${index + 1}: ${permit.notes}`,
-      );
-    }
+    addNote(permit.notes, `التصريح ${index + 1}`);
   });
 
-  return [...new Set(notes)].join("\n") || "-";
+  return notes.join("\n") || "-";
 }
+
 
 function getAllFileTypes(item) {
   const job = String(item.job || "").trim();
