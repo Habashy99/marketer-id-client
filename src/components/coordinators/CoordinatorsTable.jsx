@@ -1,5 +1,7 @@
+
 import { hasPermission } from "../../helpers/permissions";
 import { useAuth } from "../../context/authContext";
+
 import {
     formatDate,
     isCertificateExpired,
@@ -12,6 +14,11 @@ export default function CoordinatorsTable({
     onSelectCoordinator,
     onPrintCoordinator,
 }) {
+    const { user } = useAuth();
+
+    // Permission
+    const canPrintCard = hasPermission(user, 24);
+
     if (loading) {
         return (
             <p className="py-8 text-center text-gray-500">
@@ -27,10 +34,7 @@ export default function CoordinatorsTable({
             </p>
         );
     }
-    const { user } = useAuth();
 
-    // Use 16 for the marketing employees' card system.
-    const canPrintCard = hasPermission(user, 24);
     return (
         <div className="overflow-x-auto rounded-xl bg-white shadow">
             <table className="min-w-350 w-full border-collapse text-right text-sm">
@@ -47,6 +51,7 @@ export default function CoordinatorsTable({
                             "المحافظة",
                             "الحالة",
                             "الموقف الأمني",
+                            "الملاحظات الأمنية",
                             "انتهاء الشهادة الصحية",
                             "الصورة الشخصية",
                             "الاستثناءات",
@@ -69,7 +74,8 @@ export default function CoordinatorsTable({
                             String(coordinator.states ?? "").trim() ===
                             "غير مفعل";
 
-                        const expired = isCertificateExpired(coordinator);
+                        const expired =
+                            isCertificateExpired(coordinator);
 
                         const rowClass =
                             inactive || expired
@@ -78,6 +84,14 @@ export default function CoordinatorsTable({
 
                         const profilePicture =
                             coordinator.profile_picture;
+
+                        const securityNotes = Array.isArray(
+                            coordinator.security_notes
+                        )
+                            ? coordinator.security_notes
+                                .filter(Boolean)
+                                .join(" - ")
+                            : coordinator.security_notes;
 
                         return (
                             <tr
@@ -122,24 +136,44 @@ export default function CoordinatorsTable({
 
                                 <td className="whitespace-nowrap p-3">
                                     <span
-                                        className={`rounded-full px-2 py-1 ${inactive
-                                            ? "bg-red-200 text-red-800"
-                                            : "bg-green-100 text-green-800"
-                                            }`}
+                                        className={`rounded-full px-2 py-1 ${
+                                            inactive
+                                                ? "bg-red-200 text-red-800"
+                                                : "bg-green-100 text-green-800"
+                                        }`}
                                     >
                                         {coordinator.states || "—"}
                                     </span>
                                 </td>
 
-                                <td className="p-3">
+                                {/* Security status */}
+                                <td className="whitespace-nowrap p-3">
                                     {coordinator.security_situation ?? "—"}
                                 </td>
 
+                                {/* Security notes */}
                                 <td
-                                    className={`whitespace-nowrap p-3 ${expired
-                                        ? "font-bold text-red-700"
-                                        : ""
-                                        }`}
+                                    className="min-w-48 max-w-80 p-3"
+                                    title={securityNotes || ""}
+                                >
+                                    {securityNotes ? (
+                                        <span className="block whitespace-pre-wrap break-words text-gray-700">
+                                            {securityNotes}
+                                        </span>
+                                    ) : (
+                                        <span className="text-gray-400">
+                                            لا توجد ملاحظات أمنية
+                                        </span>
+                                    )}
+                                </td>
+
+                                {/* Health certificate expiry */}
+                                <td
+                                    className={`whitespace-nowrap p-3 ${
+                                        expired
+                                            ? "font-bold text-red-700"
+                                            : ""
+                                    }`}
                                 >
                                     {formatDate(
                                         coordinator.health_certificate_expiry_date
@@ -152,6 +186,7 @@ export default function CoordinatorsTable({
                                     )}
                                 </td>
 
+                                {/* Profile picture */}
                                 <td
                                     className="min-w-32 p-3"
                                     onClick={(event) =>
@@ -181,6 +216,7 @@ export default function CoordinatorsTable({
                                     )}
                                 </td>
 
+                                {/* Exceptions */}
                                 <td className="max-w-56 p-3">
                                     {coordinator.exceptions?.length ? (
                                         <div className="flex flex-col gap-1">
@@ -200,6 +236,8 @@ export default function CoordinatorsTable({
                                         "لا توجد استثناءات"
                                     )}
                                 </td>
+
+                                {/* Email discount */}
                                 <td className="p-3">
                                     {coordinator.email_discount ?? "لا"}
                                 </td>
@@ -210,21 +248,28 @@ export default function CoordinatorsTable({
                                         <button
                                             type="button"
                                             disabled={
-                                                String(coordinator.security_situation ?? "").trim() !==
-                                                "سليم"
+                                                String(
+                                                    coordinator.security_situation ?? ""
+                                                ).trim() !== "سليم"
                                             }
                                             onClick={(event) => {
                                                 event.stopPropagation();
-                                                onPrintCoordinator?.(coordinator);
+
+                                                onPrintCoordinator?.(
+                                                    coordinator
+                                                );
                                             }}
-                                            className={`rounded-lg px-4 py-2 text-white ${String(coordinator.security_situation ?? "").trim() ===
-                                                    "سليم"
+                                            className={`rounded-lg px-4 py-2 text-white ${
+                                                String(
+                                                    coordinator.security_situation ?? ""
+                                                ).trim() === "سليم"
                                                     ? "bg-blue-600 hover:bg-blue-700"
                                                     : "cursor-not-allowed bg-gray-400 opacity-60"
-                                                }`}
+                                            }`}
                                             title={
-                                                String(coordinator.security_situation ?? "").trim() !==
-                                                    "سليم"
+                                                String(
+                                                    coordinator.security_situation ?? ""
+                                                ).trim() !== "سليم"
                                                     ? "لا يمكن طباعة الكارت بسبب الموقف الأمني"
                                                     : "طباعة الكارت"
                                             }
