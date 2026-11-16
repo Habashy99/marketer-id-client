@@ -157,7 +157,7 @@ export default function CoordinatorsTable({
                                     title={securityNotes || ""}
                                 >
                                     {securityNotes ? (
-                                        <span className="block whitespace-pre-wrap break-words text-gray-700">
+                                        <span className="block whitespace-pre-wrap wrap-break-word text-gray-700">
                                             {securityNotes}
                                         </span>
                                     ) : (

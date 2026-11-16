@@ -15,13 +15,12 @@ import CreateExceptionModal from "../../../components/coordinators/CreateExcepti
 import DeleteExceptionModal from "../../../components/coordinators/DeleteExceptionModal";
 import PrintCoordinatorModal from "../../../components/coordinators/PrintCoordinatorModal";
 
-import {
-  groupCoordinators,
-  normalizeJob,
-} from "../../../helpers/coordinatorHelpers";
+import { groupCoordinators } from "../../../helpers/coordinatorHelpers";
 
 const ADVERTISING_COMPANIES_URL = "advertising-companies";
 const BRANCHES_URL = "retail/branches";
+
+const DEFAULT_PAGE_SIZE = 50;
 
 export default function CoordinatorsManagement() {
   const { user } = useAuth();
@@ -38,7 +37,19 @@ export default function CoordinatorsManagement() {
   const [advertisingCompanies, setAdvertisingCompanies] = useState([]);
   const [branches, setBranches] = useState([]);
 
-  // Security details - loaded only when opening coordinator details
+  // Pagination
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    limit: DEFAULT_PAGE_SIZE,
+    totalRecords: 0,
+    totalPages: 0,
+    hasPreviousPage: false,
+    hasNextPage: false,
+  });
+
+  // Security details
   const [securityDetails, setSecurityDetails] = useState(null);
   const [securityLoading, setSecurityLoading] = useState(false);
   const [securityError, setSecurityError] = useState("");
@@ -51,6 +62,8 @@ export default function CoordinatorsManagement() {
 
   // Toolbar filters
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
   const [job, setJob] = useState("");
   const [filter, setFilter] = useState("");
 
@@ -75,20 +88,105 @@ export default function CoordinatorsManagement() {
   const [createExceptionOpen, setCreateExceptionOpen] = useState(false);
   const [deleteExceptionOpen, setDeleteExceptionOpen] = useState(false);
 
-  // Load coordinators
-  const loadCoordinators = useCallback(async () => {
-    const data = await sendHttpReq("coordinators");
+  // Debounce search to avoid sending a request for every keystroke.
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 350);
 
-    if (!Array.isArray(data?.coordinators)) {
-      throw new Error("استجابة الخادم لا تحتوي على قائمة المنسقين.");
-    }
+    return () => clearTimeout(timeoutId);
+  }, [search]);
 
-    setRows(data.coordinators);
+  // Load coordinators from the server using pagination and filters.
+  const loadCoordinators = useCallback(
+    async (requestedPage = page) => {
+      setLoading(true);
 
-    return data.coordinators;
-  }, []);
+      try {
+        const params = new URLSearchParams();
 
-  // Load advertising companies
+        params.set("page", String(requestedPage));
+        params.set("limit", String(pageSize));
+
+        if (debouncedSearch) {
+          params.set("search", debouncedSearch);
+        }
+
+        if (job) {
+          params.set("job", job);
+        }
+
+        if (filter) {
+          params.set("filter", filter);
+        }
+
+        if (appliedCompany) {
+          params.set("supplierSearch", appliedCompany);
+        }
+
+        if (appliedAdvertisingCompanyId) {
+          params.set(
+            "advertisingCompanyId",
+            appliedAdvertisingCompanyId,
+          );
+        }
+
+        if (appliedBranch) {
+          params.set("branchSearch", appliedBranch);
+        }
+
+        const data = await sendHttpReq(
+          `coordinators?${params.toString()}`,
+        );
+
+        if (!Array.isArray(data?.coordinators)) {
+          throw new Error(
+            "استجابة الخادم لا تحتوي على قائمة المنسقين.",
+          );
+        }
+
+        setRows(data.coordinators);
+
+        const serverPagination = data.pagination;
+
+        if (serverPagination) {
+          setPagination(serverPagination);
+
+          // The server may correct the page if it no longer exists.
+          if (
+            Number(serverPagination.currentPage) !== requestedPage
+          ) {
+            setPage(Number(serverPagination.currentPage) || 1);
+          }
+        } else {
+          setPagination({
+            currentPage: requestedPage,
+            limit: pageSize,
+            totalRecords: data.coordinators.length,
+            totalPages: 1,
+            hasPreviousPage: requestedPage > 1,
+            hasNextPage: false,
+          });
+        }
+
+        return data.coordinators;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [
+      page,
+      pageSize,
+      debouncedSearch,
+      job,
+      filter,
+      appliedCompany,
+      appliedAdvertisingCompanyId,
+      appliedBranch,
+    ],
+  );
+
+  // Load advertising companies.
   const loadAdvertisingCompanies = useCallback(async () => {
     const data = await sendHttpReq(ADVERTISING_COMPANIES_URL);
 
@@ -99,8 +197,7 @@ export default function CoordinatorsManagement() {
     setAdvertisingCompanies(data.companies);
   }, []);
 
-  // Load branches only.
-  // Suppliers are loaded dynamically through SearchableSelect.
+  // Load branches.
   const loadBranches = useCallback(async () => {
     const data = await sendHttpReq(BRANCHES_URL);
 
@@ -111,35 +208,76 @@ export default function CoordinatorsManagement() {
     setBranches(data);
   }, []);
 
-  // Initial loading / refresh
-  const loadAllData = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  // Load coordinators whenever page, page size, or applied filters change.
+  useEffect(() => {
+    if (!canViewCoordinators) {
+      setLoading(false);
+      return;
+    }
 
-    try {
+    let cancelled = false;
+
+    async function fetchCoordinators() {
+      setError("");
+
+      try {
+        await loadCoordinators();
+      } catch (err) {
+        if (cancelled) return;
+
+        console.error("Coordinators loading error:", err);
+
+        setError(
+          err.message || "حدث خطأ أثناء تحميل المنسقين.",
+        );
+      }
+    }
+
+    fetchCoordinators();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewCoordinators, loadCoordinators]);
+
+  // Load supporting data once.
+  useEffect(() => {
+    if (!canViewCoordinators) return;
+
+    let cancelled = false;
+
+    async function loadSupportingData() {
       const results = await Promise.allSettled([
-        loadCoordinators(),
         loadAdvertisingCompanies(),
         loadBranches(),
       ]);
+
+      if (cancelled) return;
 
       const failed = results.find(
         (result) => result.status === "rejected",
       );
 
       if (failed) {
-        console.error("Loading error:", failed.reason);
+        console.error(
+          "Supporting data loading error:",
+          failed.reason,
+        );
 
         setError(
           failed.reason?.message ||
-            "حدث خطأ أثناء تحميل البيانات.",
+            "حدث خطأ أثناء تحميل البيانات المساعدة.",
         );
       }
-    } finally {
-      setLoading(false);
     }
+
+    loadSupportingData();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
-    loadCoordinators,
+    canViewCoordinators,
     loadAdvertisingCompanies,
     loadBranches,
   ]);
@@ -198,119 +336,98 @@ export default function CoordinatorsManagement() {
     selectedCoordinator?.national_id_number,
   ]);
 
-  // Initial page loading
-  useEffect(() => {
-    if (canViewCoordinators) {
-      loadAllData();
-    } else {
-      setLoading(false);
-    }
-  }, [canViewCoordinators, loadAllData]);
-
-  // Group coordinators and exceptions
+  // Group coordinators and their exceptions.
   const coordinators = useMemo(
     () => groupCoordinators(rows),
     [rows],
   );
 
-  // Apply filters
-  const filteredCoordinators = useMemo(() => {
-    const searchValue = search.trim().toLowerCase();
+  // Refresh all data.
+  async function handleRefresh() {
+    setError("");
+    setNotice("");
 
-    const normalizeText = (value) =>
-      String(value ?? "")
-        .trim()
-        .replace(/\s+/g, " ")
-        .toLowerCase();
+    const results = await Promise.allSettled([
+      loadCoordinators(),
+      loadAdvertisingCompanies(),
+      loadBranches(),
+    ]);
 
-    return coordinators.filter((coordinator) => {
-      const matchesSearch =
-        !searchValue ||
-        [
-          coordinator.code,
-          coordinator.name,
-          coordinator.mobile,
-          coordinator.supplier_name,
-          coordinator.governorate,
-          coordinator.national_id_number,
-          coordinator.branch_name,
-          coordinator.advertising_company_name,
-        ].some((value) =>
-          String(value ?? "")
-            .toLowerCase()
-            .includes(searchValue),
-        );
+    const failed = results.find(
+      (result) => result.status === "rejected",
+    );
 
-      const matchesJob =
-        !job ||
-        normalizeJob(coordinator.job) === normalizeJob(job);
+    if (failed) {
+      console.error("Refresh error:", failed.reason);
 
-      const inactive =
-        String(coordinator.states ?? "").trim() === "غير مفعل";
-
-      let expiredCertificate = false;
-
-      if (coordinator.health_certificate_expiry_date) {
-        const expiry = new Date(
-          coordinator.health_certificate_expiry_date,
-        );
-
-        if (!Number.isNaN(expiry.getTime())) {
-          const today = new Date();
-
-          today.setHours(0, 0, 0, 0);
-          expiry.setHours(0, 0, 0, 0);
-
-          expiredCertificate = expiry < today;
-        }
-      }
-
-      const matchesFilter =
-        filter !== "expired" ||
-        inactive ||
-        expiredCertificate;
-
-      const matchesCompany =
-        !normalizeText(appliedCompany) ||
-        normalizeText(coordinator.supplier_name).includes(
-          normalizeText(appliedCompany),
-        ) ||
-        normalizeText(coordinator.company_name) ===
-          normalizeText(appliedCompany);
-
-      const matchesAdvertisingCompany =
-        !appliedAdvertisingCompanyId ||
-        Number(coordinator.advertising_company_id) ===
-          Number(appliedAdvertisingCompanyId);
-
-      const matchesBranch =
-        !normalizeText(appliedBranch) ||
-        normalizeText(coordinator.branch_name).includes(
-          normalizeText(appliedBranch),
-        ) ||
-        normalizeText(coordinator.branch) ===
-          normalizeText(appliedBranch);
-
-      return (
-        matchesSearch &&
-        matchesJob &&
-        matchesFilter &&
-        matchesCompany &&
-        matchesAdvertisingCompany &&
-        matchesBranch
+      setError(
+        failed.reason?.message ||
+          "حدث خطأ أثناء تحديث البيانات.",
       );
-    });
-  }, [
-    coordinators,
-    search,
-    job,
-    filter,
-    appliedCompany,
-    appliedAdvertisingCompanyId,
-    appliedBranch,
-  ]);
+    } else {
+      setNotice("تم تحديث البيانات بنجاح.");
+    }
+  }
 
-  // Create coordinator
+  // Search and filter handlers.
+  function handleSearchChange(value) {
+    setSearch(value);
+    setPage(1);
+  }
+
+  function handleJobChange(value) {
+    setJob(value);
+    setPage(1);
+  }
+
+  function handleFilterChange(value) {
+    setFilter(value);
+    setPage(1);
+  }
+
+  function handleFilterCompany() {
+    setAppliedCompany(company.trim());
+    setPage(1);
+  }
+
+  function handleFilterAdvertisingCompany() {
+    setAppliedAdvertisingCompanyId(advertisingCompanyId);
+    setPage(1);
+  }
+
+  function handleFilterBranch() {
+    setAppliedBranch(branch.trim());
+    setPage(1);
+  }
+
+  function handlePageSizeChange(value) {
+    const nextSize = Number(value);
+
+    if (![25, 50, 100].includes(nextSize)) return;
+
+    setPageSize(nextSize);
+    setPage(1);
+  }
+
+  function handleClearFilters() {
+    setSearch("");
+    setDebouncedSearch("");
+
+    setJob("");
+    setFilter("");
+
+    setCompany("");
+    setAdvertisingCompanyId("");
+    setBranch("");
+
+    setAppliedCompany("");
+    setAppliedAdvertisingCompanyId("");
+    setAppliedBranch("");
+
+    setPage(1);
+  }
+
+  // Create coordinator.
   async function handleCreateCoordinator(formData) {
     setSaving(true);
     setError("");
@@ -326,7 +443,8 @@ export default function CoordinatorsManagement() {
       setCreateCoordinatorOpen(false);
       setNotice(data.message || "تم إنشاء المنسق بنجاح.");
 
-      await loadCoordinators();
+      setPage(1);
+      await loadCoordinators(1);
     } catch (err) {
       setError(err.message || "فشل إنشاء المنسق.");
       throw err;
@@ -335,7 +453,7 @@ export default function CoordinatorsManagement() {
     }
   }
 
-  // Create exception
+  // Create exception.
   async function handleCreateException(formData) {
     setSaving(true);
     setError("");
@@ -360,7 +478,7 @@ export default function CoordinatorsManagement() {
     }
   }
 
-  // Delete exception
+  // Delete exception.
   const handleDeleteException = async (data) => {
     setSaving(true);
     setError("");
@@ -392,7 +510,7 @@ export default function CoordinatorsManagement() {
     }
   };
 
-  // Update coordinator
+  // Update coordinator.
   async function handleUpdateCoordinator(formData) {
     setSaving(true);
     setError("");
@@ -426,27 +544,7 @@ export default function CoordinatorsManagement() {
     }
   }
 
-  // Refresh all data
-  async function handleRefresh() {
-    await loadAllData();
-  }
-
-  // Clear filters
-  function handleClearFilters() {
-    setSearch("");
-    setJob("");
-    setFilter("");
-
-    setCompany("");
-    setAdvertisingCompanyId("");
-    setBranch("");
-
-    setAppliedCompany("");
-    setAppliedAdvertisingCompanyId("");
-    setAppliedBranch("");
-  }
-
-  // Close coordinator details and clear security data
+  // Close coordinator details and clear security data.
   function handleCloseCoordinatorDetails() {
     setSelectedCoordinator(null);
     setSecurityDetails(null);
@@ -467,6 +565,10 @@ export default function CoordinatorsManagement() {
       </div>
     );
   }
+
+  const totalPages = Number(pagination.totalPages) || 0;
+  const currentPage = Number(pagination.currentPage) || 1;
+  const totalRecords = Number(pagination.totalRecords) || 0;
 
   return (
     <div dir="rtl" className="min-h-screen bg-gray-100">
@@ -531,29 +633,23 @@ export default function CoordinatorsManagement() {
 
         <CoordinatorsToolbar
           search={search}
-          setSearch={setSearch}
+          setSearch={handleSearchChange}
           job={job}
-          setJob={setJob}
+          setJob={handleJobChange}
           filter={filter}
-          setFilter={setFilter}
+          setFilter={handleFilterChange}
           company={company}
           setCompany={setCompany}
-          onFilterCompany={() =>
-            setAppliedCompany(company.trim())
-          }
+          onFilterCompany={handleFilterCompany}
           advertisingCompanyId={advertisingCompanyId}
           setAdvertisingCompanyId={setAdvertisingCompanyId}
           advertisingCompanies={advertisingCompanies}
-          onFilterAdvertisingCompany={() =>
-            setAppliedAdvertisingCompanyId(
-              advertisingCompanyId,
-            )
+          onFilterAdvertisingCompany={
+            handleFilterAdvertisingCompany
           }
           branch={branch}
           setBranch={setBranch}
-          onFilterBranch={() =>
-            setAppliedBranch(branch.trim())
-          }
+          onFilterBranch={handleFilterBranch}
           onCreateCoordinator={() =>
             setCreateCoordinatorOpen(true)
           }
@@ -570,8 +666,13 @@ export default function CoordinatorsManagement() {
 
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-gray-600">
           <div>
-            عدد المنسقين:{" "}
-            <strong>{filteredCoordinators.length}</strong>
+            إجمالي المنسقين:{" "}
+            <strong>{totalRecords.toLocaleString("ar-EG")}</strong>
+
+            <span className="mx-2 text-gray-400">|</span>
+
+            عدد المنسقين في الصفحة:{" "}
+            <strong>{coordinators.length.toLocaleString("ar-EG")}</strong>
           </div>
 
           <button
@@ -584,11 +685,75 @@ export default function CoordinatorsManagement() {
         </div>
 
         <CoordinatorsTable
-          coordinators={filteredCoordinators}
+          coordinators={coordinators}
           loading={loading}
           onSelectCoordinator={setSelectedCoordinator}
           onPrintCoordinator={setCoordinatorToPrint}
         />
+
+        {/* Pagination controls */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-700">
+            <label htmlFor="coordinators-page-size">
+              عدد النتائج في الصفحة:
+            </label>
+
+            <select
+              id="coordinators-page-size"
+              value={pageSize}
+              onChange={(event) =>
+                handlePageSizeChange(event.target.value)
+              }
+              disabled={loading}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:border-orange-500"
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+
+            <span className="text-gray-500">
+              صفحة {currentPage.toLocaleString("ar-EG")} من{" "}
+              {(totalPages || 1).toLocaleString("ar-EG")}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={
+                loading ||
+                currentPage <= 1 ||
+                totalPages === 0
+              }
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              السابق
+            </button>
+
+            <span className="min-w-20 text-center text-sm text-gray-600">
+              {currentPage.toLocaleString("ar-EG")}
+            </span>
+
+            <button
+              type="button"
+              onClick={() =>
+                setPage((current) =>
+                  Math.min(totalPages, current + 1),
+                )
+              }
+              disabled={
+                loading ||
+                totalPages === 0 ||
+                currentPage >= totalPages
+              }
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              التالي
+            </button>
+          </div>
+        </div>
 
         <CreateCoordinatorModal
           open={createCoordinatorOpen}
