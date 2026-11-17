@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -73,10 +72,8 @@ export default function CoordinatorsManagement() {
 
   // Applied filters
   const [appliedCompany, setAppliedCompany] = useState("");
-  const [
-    appliedAdvertisingCompanyId,
-    setAppliedAdvertisingCompanyId,
-  ] = useState("");
+  const [appliedAdvertisingCompanyId, setAppliedAdvertisingCompanyId] =
+    useState("");
   const [appliedBranch, setAppliedBranch] = useState("");
 
   // Selected items
@@ -125,24 +122,17 @@ export default function CoordinatorsManagement() {
         }
 
         if (appliedAdvertisingCompanyId) {
-          params.set(
-            "advertisingCompanyId",
-            appliedAdvertisingCompanyId,
-          );
+          params.set("advertisingCompanyId", appliedAdvertisingCompanyId);
         }
 
         if (appliedBranch) {
           params.set("branchSearch", appliedBranch);
         }
 
-        const data = await sendHttpReq(
-          `coordinators?${params.toString()}`,
-        );
+        const data = await sendHttpReq(`coordinators?${params.toString()}`);
 
         if (!Array.isArray(data?.coordinators)) {
-          throw new Error(
-            "استجابة الخادم لا تحتوي على قائمة المنسقين.",
-          );
+          throw new Error("استجابة الخادم لا تحتوي على قائمة المنسقين.");
         }
 
         setRows(data.coordinators);
@@ -153,9 +143,7 @@ export default function CoordinatorsManagement() {
           setPagination(serverPagination);
 
           // The server may correct the page if it no longer exists.
-          if (
-            Number(serverPagination.currentPage) !== requestedPage
-          ) {
+          if (Number(serverPagination.currentPage) !== requestedPage) {
             setPage(Number(serverPagination.currentPage) || 1);
           }
         } else {
@@ -227,9 +215,7 @@ export default function CoordinatorsManagement() {
 
         console.error("Coordinators loading error:", err);
 
-        setError(
-          err.message || "حدث خطأ أثناء تحميل المنسقين.",
-        );
+        setError(err.message || "حدث خطأ أثناء تحميل المنسقين.");
       }
     }
 
@@ -254,19 +240,13 @@ export default function CoordinatorsManagement() {
 
       if (cancelled) return;
 
-      const failed = results.find(
-        (result) => result.status === "rejected",
-      );
+      const failed = results.find((result) => result.status === "rejected");
 
       if (failed) {
-        console.error(
-          "Supporting data loading error:",
-          failed.reason,
-        );
+        console.error("Supporting data loading error:", failed.reason);
 
         setError(
-          failed.reason?.message ||
-            "حدث خطأ أثناء تحميل البيانات المساعدة.",
+          failed.reason?.message || "حدث خطأ أثناء تحميل البيانات المساعدة.",
         );
       }
     }
@@ -276,11 +256,7 @@ export default function CoordinatorsManagement() {
     return () => {
       cancelled = true;
     };
-  }, [
-    canViewCoordinators,
-    loadAdvertisingCompanies,
-    loadBranches,
-  ]);
+  }, [canViewCoordinators, loadAdvertisingCompanies, loadBranches]);
 
   // Load security details only when a coordinator is selected.
   useEffect(() => {
@@ -302,9 +278,7 @@ export default function CoordinatorsManagement() {
 
       try {
         const data = await sendHttpReq(
-          `coordinators/${encodeURIComponent(
-            coordinatorId,
-          )}/security-details`,
+          `coordinators/${encodeURIComponent(coordinatorId)}/security-details`,
         );
 
         if (cancelled) return;
@@ -316,9 +290,7 @@ export default function CoordinatorsManagement() {
         console.error("Security details loading error:", err);
 
         setSecurityDetails(null);
-        setSecurityError(
-          err.message || "تعذر تحميل السجل الأمني.",
-        );
+        setSecurityError(err.message || "تعذر تحميل السجل الأمني.");
       } finally {
         if (!cancelled) {
           setSecurityLoading(false);
@@ -331,17 +303,28 @@ export default function CoordinatorsManagement() {
     return () => {
       cancelled = true;
     };
-  }, [
-    selectedCoordinator?.id,
-    selectedCoordinator?.national_id_number,
-  ]);
+  }, [selectedCoordinator?.id, selectedCoordinator?.national_id_number]);
 
   // Group coordinators and their exceptions.
-  const coordinators = useMemo(
-    () => groupCoordinators(rows),
-    [rows],
-  );
+  const coordinators = useMemo(() => groupCoordinators(rows), [rows]);
+  // Prepare coordinator data for printing.
+  const coordinatorForPrint = useMemo(() => {
+    if (!coordinatorToPrint) return null;
 
+    const companyId =
+      coordinatorToPrint.advertising_company_id ??
+      coordinatorToPrint.company_id ??
+      coordinatorToPrint.company_name;
+
+    const company = advertisingCompanies.find(
+      (item) => String(item.id) === String(companyId),
+    );
+
+    return {
+      ...coordinatorToPrint,
+      company_name: company?.name ?? coordinatorToPrint.company_name ?? "",
+    };
+  }, [coordinatorToPrint, advertisingCompanies]);
   // Refresh all data.
   async function handleRefresh() {
     setError("");
@@ -353,17 +336,12 @@ export default function CoordinatorsManagement() {
       loadBranches(),
     ]);
 
-    const failed = results.find(
-      (result) => result.status === "rejected",
-    );
+    const failed = results.find((result) => result.status === "rejected");
 
     if (failed) {
       console.error("Refresh error:", failed.reason);
 
-      setError(
-        failed.reason?.message ||
-          "حدث خطأ أثناء تحديث البيانات.",
-      );
+      setError(failed.reason?.message || "حدث خطأ أثناء تحديث البيانات.");
     } else {
       setNotice("تم تحديث البيانات بنجاح.");
     }
@@ -497,9 +475,7 @@ export default function CoordinatorsManagement() {
       await loadCoordinators();
 
       setDeleteExceptionOpen(false);
-      setNotice(
-        response.message || "تم حذف الاستثناء بنجاح.",
-      );
+      setNotice(response.message || "تم حذف الاستثناء بنجاح.");
 
       return response;
     } catch (err) {
@@ -533,9 +509,7 @@ export default function CoordinatorsManagement() {
 
       setSelectedCoordinator(updatedCoordinator || null);
 
-      setNotice(
-        data.message || "تم تحديث بيانات المنسق بنجاح.",
-      );
+      setNotice(data.message || "تم تحديث بيانات المنسق بنجاح.");
     } catch (err) {
       setError(err.message || "فشل تحديث بيانات المنسق.");
       throw err;
@@ -644,21 +618,13 @@ export default function CoordinatorsManagement() {
           advertisingCompanyId={advertisingCompanyId}
           setAdvertisingCompanyId={setAdvertisingCompanyId}
           advertisingCompanies={advertisingCompanies}
-          onFilterAdvertisingCompany={
-            handleFilterAdvertisingCompany
-          }
+          onFilterAdvertisingCompany={handleFilterAdvertisingCompany}
           branch={branch}
           setBranch={setBranch}
           onFilterBranch={handleFilterBranch}
-          onCreateCoordinator={() =>
-            setCreateCoordinatorOpen(true)
-          }
-          onCreateException={() =>
-            setCreateExceptionOpen(true)
-          }
-          onDeleteException={() =>
-            setDeleteExceptionOpen(true)
-          }
+          onCreateCoordinator={() => setCreateCoordinatorOpen(true)}
+          onCreateException={() => setCreateExceptionOpen(true)}
+          onDeleteException={() => setDeleteExceptionOpen(true)}
           canAddCoordinator={canAddCoordinator}
           canAddException={canAddException}
           canDeleteException={canDeleteException}
@@ -668,9 +634,7 @@ export default function CoordinatorsManagement() {
           <div>
             إجمالي المنسقين:{" "}
             <strong>{totalRecords.toLocaleString("ar-EG")}</strong>
-
             <span className="mx-2 text-gray-400">|</span>
-
             عدد المنسقين في الصفحة:{" "}
             <strong>{coordinators.length.toLocaleString("ar-EG")}</strong>
           </div>
@@ -701,9 +665,7 @@ export default function CoordinatorsManagement() {
             <select
               id="coordinators-page-size"
               value={pageSize}
-              onChange={(event) =>
-                handlePageSizeChange(event.target.value)
-              }
+              onChange={(event) => handlePageSizeChange(event.target.value)}
               disabled={loading}
               className="rounded-lg border border-gray-300 bg-white px-3 py-2 outline-none focus:border-orange-500"
             >
@@ -722,11 +684,7 @@ export default function CoordinatorsManagement() {
             <button
               type="button"
               onClick={() => setPage((current) => Math.max(1, current - 1))}
-              disabled={
-                loading ||
-                currentPage <= 1 ||
-                totalPages === 0
-              }
+              disabled={loading || currentPage <= 1 || totalPages === 0}
               className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               السابق
@@ -739,14 +697,10 @@ export default function CoordinatorsManagement() {
             <button
               type="button"
               onClick={() =>
-                setPage((current) =>
-                  Math.min(totalPages, current + 1),
-                )
+                setPage((current) => Math.min(totalPages, current + 1))
               }
               disabled={
-                loading ||
-                totalPages === 0 ||
-                currentPage >= totalPages
+                loading || totalPages === 0 || currentPage >= totalPages
               }
               className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -794,7 +748,7 @@ export default function CoordinatorsManagement() {
 
         {coordinatorToPrint && (
           <PrintCoordinatorModal
-            coordinator={coordinatorToPrint}
+            coordinator={coordinatorForPrint}
             onClose={() => setCoordinatorToPrint(null)}
           />
         )}
