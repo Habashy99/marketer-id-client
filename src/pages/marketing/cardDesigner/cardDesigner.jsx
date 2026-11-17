@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -49,7 +50,13 @@ const ELEMENT_TYPES = [
     x: 220,
     y: 290,
   },
-  { type: "job", label: "الوظيفة", x: 220, y: 335 },
+  {
+    type: "id_expiry_date",
+    label: "تاريخ انتهاء البطاقة",
+    x: 220,
+    y: 335,
+  },
+  { type: "job", label: "الوظيفة", x: 220, y: 380 },
 ];
 
 const SAMPLE_VALUES = {
@@ -58,6 +65,7 @@ const SAMPLE_VALUES = {
   date: new Date().toLocaleDateString("en-CA"),
   code: "1001",
   national_id_number: "00000000000000",
+  id_expiry_date: "2027-12-31",
   job: "مندوب",
 };
 
@@ -188,6 +196,7 @@ function getCoordinatorValue(coordinator, type) {
     code: coordinator?.code,
     job: coordinator?.job,
     national_id_number: coordinator?.national_id_number,
+    id_expiry_date: coordinator?.id_expiry_date,
     date: new Date().toLocaleDateString("en-CA"),
   };
 
@@ -370,7 +379,6 @@ export default function CardTemplateSettings() {
 
   const printDesign = selectedPrintTemplate?.design ?? null;
 
-  // BACKGROUND IMAGE:
   // Revoke temporary object URLs when replaced or when this page unmounts.
   useEffect(() => {
     return () => {
@@ -451,7 +459,6 @@ export default function CardTemplateSettings() {
     }));
   }, []);
 
-  // BACKGROUND IMAGE:
   // Uploading a background only updates this temporary state.
   // It does not update template.width, template.height, or template.elements.
   const handleCanvasBackgroundUpload = useCallback((event) => {
@@ -471,11 +478,9 @@ export default function CardTemplateSettings() {
     setError("");
     setNotice("");
 
-    // Allows selecting the same image again.
     event.target.value = "";
   }, []);
 
-  // BACKGROUND IMAGE:
   // Remove the temporary image and restore the white preview background.
   const removeCanvasBackground = useCallback(() => {
     setCanvasBackgroundImage("");
@@ -573,7 +578,6 @@ export default function CardTemplateSettings() {
       elements,
     });
 
-    // Clear the temporary background when loading another saved design.
     setCanvasBackgroundImage("");
 
     setEditingTemplateId(savedTemplate.id);
@@ -1615,69 +1619,69 @@ export default function CardTemplateSettings() {
       </div>
 
       <style>{`
-                .coordinator-print-area {
-                    display: none;
-                }
+        .coordinator-print-area {
+            display: none;
+        }
 
-                @media print {
-                    @page {
-                        size: auto;
-                        margin: 0;
-                    }
+        @media print {
+            @page {
+                size: auto;
+                margin: 0;
+            }
 
-                    html,
-                    body,
-                    #root {
-                        margin: 0 !important;
-                        padding: 0 !important;
-                        width: 100% !important;
-                        min-height: 0 !important;
-                        background: #ffffff !important;
-                    }
+            html,
+            body,
+            #root {
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                min-height: 0 !important;
+                background: #ffffff !important;
+            }
 
-                    body * {
-                        visibility: hidden !important;
-                    }
+            body * {
+                visibility: hidden !important;
+            }
 
-                    #temporary-coordinator-print,
-                    #temporary-coordinator-print * {
-                        visibility: visible !important;
-                    }
+            #temporary-coordinator-print,
+            #temporary-coordinator-print * {
+                visibility: visible !important;
+            }
 
-                    #temporary-coordinator-print {
-                        display: block !important;
-                        position: absolute !important;
-                        top: 0 !important;
-                        left: 0 !important;
-                        margin: 0 !important;
-                        padding: 0 !important;
-                        overflow: hidden !important;
-                        transform: none !important;
-                        background: #ffffff !important;
-                        print-color-adjust: exact !important;
-                        -webkit-print-color-adjust: exact !important;
-                    }
+            #temporary-coordinator-print {
+                display: block !important;
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: hidden !important;
+                transform: none !important;
+                background: #ffffff !important;
+                print-color-adjust: exact !important;
+                -webkit-print-color-adjust: exact !important;
+            }
 
-                    #temporary-coordinator-print .coordinator-print-card {
-                        display: block !important;
-                        margin: 0 !important;
-                        padding: 0 !important;
-                        break-inside: avoid !important;
-                        page-break-inside: avoid !important;
-                    }
+            #temporary-coordinator-print .coordinator-print-card {
+                display: block !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
 
-                    #temporary-coordinator-print .card-artwork {
-                        max-width: none !important;
-                        margin: 0 !important;
-                        transform: none !important;
-                    }
+            #temporary-coordinator-print .card-artwork {
+                max-width: none !important;
+                margin: 0 !important;
+                transform: none !important;
+            }
 
-                    #temporary-coordinator-print img {
-                        display: block !important;
-                        max-width: none !important;
-                    }
-                }
-            `}</style>
+            #temporary-coordinator-print img {
+                display: block !important;
+                max-width: none !important;
+            }
+        }
+      `}</style>
     </div>
   );
 }
