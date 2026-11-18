@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -16,12 +15,7 @@ const JOB_OPTIONS = ["عميل", "مندوب", "مندوبة", "منسق", "من
 
 const FILE_TYPE_OPTIONS = ["مناديب/منسقين", "25"];
 
-const SECURITY_STATUSES = [
-  "سليم",
-  "تحت المراجعة",
-  "بلوك",
-  "غير محدد",
-];
+const SECURITY_STATUSES = ["سليم", "تحت المراجعة", "بلوك", "غير محدد"];
 
 const GOVERNORATES = [
   "الإسكندرية",
@@ -41,6 +35,7 @@ const EMPTY_FORM = {
   name: "",
   national_id_number: "",
   job: "عميل",
+  area: "",
   governorate: "",
   birth_date: "",
   birth_place: "",
@@ -73,18 +68,14 @@ async function requestData(url, method = "GET", body) {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(
-        data?.message || "حدث خطأ أثناء تنفيذ الطلب.",
-      );
+      throw new Error(data?.message || "حدث خطأ أثناء تنفيذ الطلب.");
     }
 
     return data;
   }
 
   if (response?.ok === false) {
-    throw new Error(
-      response.message || "حدث خطأ أثناء تنفيذ الطلب.",
-    );
+    throw new Error(response.message || "حدث خطأ أثناء تنفيذ الطلب.");
   }
 
   return response ?? {};
@@ -124,9 +115,7 @@ function getNormalizedStatus(status) {
 
 function getItemStatus(item) {
   return getNormalizedStatus(
-    item.security_status ??
-      item.security_situation ??
-      item.status,
+    item.security_status ?? item.security_situation ?? item.status,
   );
 }
 
@@ -155,10 +144,7 @@ function getNormalizedFileType(value) {
 
   if (normalized === "25") return "25";
 
-  if (
-    normalized === "مناديب/منسقين" ||
-    normalized === "مناديب/ منسقين"
-  ) {
+  if (normalized === "مناديب/منسقين" || normalized === "مناديب/ منسقين") {
     return "مناديب/منسقين";
   }
 
@@ -249,17 +235,11 @@ function normalizePersonRecord(person) {
     record_type: "person",
 
     security_status:
-      person.security_status ??
-      person.security_situation ??
-      "غير محدد",
+      person.security_status ?? person.security_situation ?? "غير محدد",
 
-    incidents: Array.isArray(person.incidents)
-      ? person.incidents
-      : [],
+    incidents: Array.isArray(person.incidents) ? person.incidents : [],
 
-    permits: Array.isArray(person.permits)
-      ? person.permits
-      : [],
+    permits: Array.isArray(person.permits) ? person.permits : [],
   };
 }
 
@@ -275,17 +255,12 @@ function normalizeIncidentRecord(incident, person) {
     record_type: "incident",
     record_type_name: "واقعة",
 
-    incident_branch:
-      incident.incident_branch ??
-      incident.branch ??
-      "",
+    incident_branch: incident.incident_branch ?? incident.branch ?? "",
 
     stolen_goods: incident.stolen_goods ?? "",
 
     value_of_stolen_goods:
-      incident.stolen_goods_value ??
-      incident.value_of_stolen_goods ??
-      "",
+      incident.stolen_goods_value ?? incident.value_of_stolen_goods ?? "",
 
     incident_date: incident.incident_date ?? "",
 
@@ -309,10 +284,7 @@ function normalizePermitRecord(permit, person) {
 
     permit_number: permit.permit_number ?? "",
 
-    permit_issue_date:
-      permit.issue_date ??
-      permit.permit_issue_date ??
-      "",
+    permit_issue_date: permit.issue_date ?? permit.permit_issue_date ?? "",
 
     notes: permit.notes ?? "",
 
@@ -345,9 +317,7 @@ function formatRecordList(records, getter) {
     .map((record) => getter(record))
     .filter(
       (value) =>
-        value !== null &&
-        value !== undefined &&
-        String(value).trim() !== "",
+        value !== null && value !== undefined && String(value).trim() !== "",
     );
 
   return values.length ? values.join("\n") : "-";
@@ -381,27 +351,19 @@ function getIncidentValues(item) {
     return formatRecordList(
       incidents,
       (incident) =>
-        incident.stolen_goods_value ??
-        incident.value_of_stolen_goods ??
-        "-",
+        incident.stolen_goods_value ?? incident.value_of_stolen_goods ?? "-",
     );
   }
 
-  return (
-    item.value_of_stolen_goods ??
-    item.stolen_goods_value ??
-    "-"
-  );
+  return item.value_of_stolen_goods ?? item.stolen_goods_value ?? "-";
 }
 
 function getIncidentDates(item) {
   const incidents = getPersonIncidents(item);
 
   if (incidents.length) {
-    return formatRecordList(
-      incidents,
-      (incident) =>
-        getDateInputValue(incident.incident_date),
+    return formatRecordList(incidents, (incident) =>
+      getDateInputValue(incident.incident_date),
     );
   }
 
@@ -414,46 +376,29 @@ function getIncidentBranches(item, branchOptions) {
   if (incidents.length) {
     return formatRecordList(incidents, (incident) => {
       const value = String(
-        incident.incident_branch ??
-          incident.branch ??
-          "",
+        incident.incident_branch ?? incident.branch ?? "",
       ).trim();
 
-      const matched = branchOptions.find(
-        (option) => option.value === value,
-      );
+      const matched = branchOptions.find((option) => option.value === value);
 
       return (
-        matched?.label ||
-        (value && !/^\d+$/.test(value) ? value : "") ||
-        "-"
+        matched?.label || (value && !/^\d+$/.test(value) ? value : "") || "-"
       );
     });
   }
 
-  const value = String(
-    item.incident_branch ?? item.branch ?? "",
-  ).trim();
+  const value = String(item.incident_branch ?? item.branch ?? "").trim();
 
-  const matched = branchOptions.find(
-    (option) => option.value === value,
-  );
+  const matched = branchOptions.find((option) => option.value === value);
 
-  return (
-    matched?.label ||
-    (value && !/^\d+$/.test(value) ? value : "") ||
-    "-"
-  );
+  return matched?.label || (value && !/^\d+$/.test(value) ? value : "") || "-";
 }
 
 function getPermitNumbers(item) {
   const permits = getPersonPermits(item);
 
   if (permits.length) {
-    return formatRecordList(
-      permits,
-      (permit) => permit.permit_number || "-",
-    );
+    return formatRecordList(permits, (permit) => permit.permit_number || "-");
   }
 
   return item.permit_number || "-";
@@ -463,20 +408,13 @@ function getPermitDates(item) {
   const permits = getPersonPermits(item);
 
   if (permits.length) {
-    return formatRecordList(
-      permits,
-      (permit) =>
-        getDateInputValue(
-          permit.issue_date ?? permit.permit_issue_date,
-        ),
+    return formatRecordList(permits, (permit) =>
+      getDateInputValue(permit.issue_date ?? permit.permit_issue_date),
     );
   }
 
-  return getDateInputValue(
-    item.issue_date ?? item.permit_issue_date,
-  );
+  return getDateInputValue(item.issue_date ?? item.permit_issue_date);
 }
-
 
 function getAllSecurityNotes(item) {
   const notes = [];
@@ -500,9 +438,7 @@ function getAllSecurityNotes(item) {
 
     seenNotes.add(normalizedText);
 
-    notes.push(
-      label ? `${label}: ${originalText}` : originalText
-    );
+    notes.push(label ? `${label}: ${originalText}` : originalText);
   }
 
   // الملاحظات العامة للشخص
@@ -520,7 +456,6 @@ function getAllSecurityNotes(item) {
 
   return notes.join("\n") || "-";
 }
-
 
 function getAllFileTypes(item) {
   const job = String(item.job || "").trim();
@@ -616,36 +551,25 @@ export default function SecurityManagement() {
 
   /* Coordinator Review */
 
-  const [coordinatorModalOpen, setCoordinatorModalOpen] =
-    useState(false);
+  const [coordinatorModalOpen, setCoordinatorModalOpen] = useState(false);
 
   const [coordinatorRows, setCoordinatorRows] = useState([]);
-  const [coordinatorLoading, setCoordinatorLoading] =
-    useState(false);
+  const [coordinatorLoading, setCoordinatorLoading] = useState(false);
 
-  const [coordinatorSaving, setCoordinatorSaving] =
-    useState(false);
+  const [coordinatorSaving, setCoordinatorSaving] = useState(false);
 
   const [coordinatorError, setCoordinatorError] = useState("");
-  const [coordinatorSuccess, setCoordinatorSuccess] =
-    useState("");
+  const [coordinatorSuccess, setCoordinatorSuccess] = useState("");
 
-  const [coordinatorSearch, setCoordinatorSearch] =
-    useState("");
+  const [coordinatorSearch, setCoordinatorSearch] = useState("");
 
   /* Editing Types */
 
-  const editingIncident = Boolean(
-    editingRecord && isIncident(editingRecord),
-  );
+  const editingIncident = Boolean(editingRecord && isIncident(editingRecord));
 
-  const editingPermit = Boolean(
-    editingRecord && isPermit(editingRecord),
-  );
+  const editingPermit = Boolean(editingRecord && isPermit(editingRecord));
 
-  const editingPerson = Boolean(
-    editingRecord && isPersonOnly(editingRecord),
-  );
+  const editingPerson = Boolean(editingRecord && isPersonOnly(editingRecord));
 
   const showPersonFields = !editingRecord || editingPerson;
   const showIncidentFields = !editingRecord || editingIncident;
@@ -670,16 +594,12 @@ export default function SecurityManagement() {
 
   function getAdvertisingCompanyName(item) {
     const companyId = String(
-      item.advertising_company ??
-        item.advertising_company_id ??
-        "",
+      item.advertising_company ?? item.advertising_company_id ?? "",
     ).trim();
 
     return (
       item.advertising_company_name ||
-      (companyId && !/^\d+$/.test(companyId)
-        ? companyId
-        : "") ||
+      (companyId && !/^\d+$/.test(companyId) ? companyId : "") ||
       "-"
     );
   }
@@ -688,8 +608,7 @@ export default function SecurityManagement() {
     return (
       item.company_display_name ||
       item.supplier_name ||
-      (item.company_name &&
-      !/^\d+$/.test(String(item.company_name))
+      (item.company_name && !/^\d+$/.test(String(item.company_name))
         ? item.company_name
         : "") ||
       "-"
@@ -697,12 +616,7 @@ export default function SecurityManagement() {
   }
 
   function getAreaName(item) {
-    return (
-      item.area ||
-      item.region ||
-      item.district ||
-      "-"
-    );
+    return item.area || item.region || item.district || "-";
   }
 
   /* ------------------------------------------------------------------------ */
@@ -740,13 +654,9 @@ export default function SecurityManagement() {
         params.set("file_type", fileTypeFilter);
       }
 
-      const data = await requestData(
-        `security?${params.toString()}`,
-      );
+      const data = await requestData(`security?${params.toString()}`);
 
-      const records = Array.isArray(data.records)
-        ? data.records
-        : [];
+      const records = Array.isArray(data.records) ? data.records : [];
 
       setRows(
         records.map((item) => ({
@@ -762,8 +672,7 @@ export default function SecurityManagement() {
         total: data.pagination?.total ?? 0,
         totalPages: data.pagination?.totalPages ?? 0,
         hasNextPage: data.pagination?.hasNextPage ?? false,
-        hasPreviousPage:
-          data.pagination?.hasPreviousPage ?? page > 1,
+        hasPreviousPage: data.pagination?.hasPreviousPage ?? page > 1,
       });
     } catch (err) {
       console.error("Load security records error:", err);
@@ -773,14 +682,7 @@ export default function SecurityManagement() {
     } finally {
       setLoading(false);
     }
-  }, [
-    canViewSecurity,
-    page,
-    search,
-    jobFilter,
-    statusFilter,
-    fileTypeFilter,
-  ]);
+  }, [canViewSecurity, page, search, jobFilter, statusFilter, fileTypeFilter]);
 
   useEffect(() => {
     loadRecords();
@@ -797,9 +699,7 @@ export default function SecurityManagement() {
       setOptionsLoading(true);
 
       try {
-        const branchesData = await requestData(
-          "retail/branches",
-        );
+        const branchesData = await requestData("retail/branches");
 
         setBranches(
           Array.isArray(branchesData)
@@ -809,10 +709,7 @@ export default function SecurityManagement() {
               : [],
         );
       } catch (err) {
-        console.error(
-          "Failed to load security form options:",
-          err,
-        );
+        console.error("Failed to load security form options:", err);
       } finally {
         setOptionsLoading(false);
       }
@@ -827,9 +724,7 @@ export default function SecurityManagement() {
 
   function buildFormFromRecord(item) {
     const incidentBranch =
-      item.incident_branch ??
-      (isIncident(item) ? item.branch : "") ??
-      "";
+      item.incident_branch ?? (isIncident(item) ? item.branch : "") ?? "";
 
     return {
       ...EMPTY_FORM,
@@ -837,32 +732,27 @@ export default function SecurityManagement() {
       name: item.name || "",
       national_id_number: item.national_id_number || "",
       job: item.job || "عميل",
-
+      area: item.area ?? item.region ?? item.district ?? "",
       governorate: item.governorate || "",
 
       incident_branch: String(incidentBranch ?? ""),
 
       incident_branch_name:
         item.incident_branch_name ||
-        (incidentBranch &&
-        !/^\d+$/.test(String(incidentBranch))
+        (incidentBranch && !/^\d+$/.test(String(incidentBranch))
           ? String(incidentBranch)
           : ""),
 
       stolen_goods: item.stolen_goods || "",
 
       value_of_stolen_goods:
-        item.value_of_stolen_goods ??
-        item.stolen_goods_value ??
-        "",
+        item.value_of_stolen_goods ?? item.stolen_goods_value ?? "",
 
       incident_date: getFormDate(item.incident_date),
 
       permit_number: item.permit_number || "",
 
-      permit_issue_date: getFormDate(
-        item.issue_date ?? item.permit_issue_date,
-      ),
+      permit_issue_date: getFormDate(item.issue_date ?? item.permit_issue_date),
 
       file_type:
         getNormalizedFileType(item.file_type) ||
@@ -920,49 +810,34 @@ export default function SecurityManagement() {
                   ? "أساسي"
                   : "-"),
 
-            national_id_number: String(
-              item.national_id_number ?? "",
-            ).trim(),
+            national_id_number: String(item.national_id_number ?? "").trim(),
 
             security_status: getNormalizedStatus(
-              item.security_status ??
-                item.security_situation ??
-                "غير محدد",
+              item.security_status ?? item.security_situation ?? "غير محدد",
             ),
 
             notes: item.security_notes ?? item.notes ?? "",
 
-            review_notes:
-              item.security_notes ?? item.notes ?? "",
+            review_notes: item.security_notes ?? item.notes ?? "",
 
-            selected:
-              !item.already_imported &&
-              !item.deleted_security_record,
+            selected: !item.already_imported && !item.deleted_security_record,
           };
         }),
       );
 
       if (records.length === 0) {
-        setCoordinatorSuccess(
-          "لا توجد سجلات منسقين متاحة للمراجعة.",
-        );
+        setCoordinatorSuccess("لا توجد سجلات منسقين متاحة للمراجعة.");
       }
     } catch (err) {
       console.error("Load coordinators error:", err);
 
-      setCoordinatorError(
-        err.message || "تعذر تحميل بيانات المنسقين.",
-      );
+      setCoordinatorError(err.message || "تعذر تحميل بيانات المنسقين.");
     } finally {
       setCoordinatorLoading(false);
     }
   }
 
-  function updateCoordinatorReviewRow(
-    nationalId,
-    field,
-    value,
-  ) {
+  function updateCoordinatorReviewRow(nationalId, field, value) {
     setCoordinatorRows((previous) =>
       previous.map((item) =>
         item.national_id_number === nationalId
@@ -998,8 +873,7 @@ export default function SecurityManagement() {
   const selectedCoordinatorCount = useMemo(
     () =>
       coordinatorRows.filter(
-        (item) =>
-          item.selected && !item.deleted_security_record,
+        (item) => item.selected && !item.deleted_security_record,
       ).length,
     [coordinatorRows],
   );
@@ -1013,28 +887,22 @@ export default function SecurityManagement() {
     }
 
     const selectedRows = coordinatorRows.filter(
-      (item) =>
-        item.selected && !item.deleted_security_record,
+      (item) => item.selected && !item.deleted_security_record,
     );
 
     if (selectedRows.length === 0) {
-      setCoordinatorError(
-        "اختر منسقًا واحدًا على الأقل للمراجعة.",
-      );
+      setCoordinatorError("اختر منسقًا واحدًا على الأقل للمراجعة.");
       return;
     }
 
     const invalidRow = selectedRows.find(
       (item) =>
-        !item.national_id_number ||
-        !/^\d{14}$/.test(item.national_id_number),
+        !item.national_id_number || !/^\d{14}$/.test(item.national_id_number),
     );
 
     if (invalidRow) {
       setCoordinatorError(
-        `الرقم القومي غير صحيح للمنسق: ${
-          invalidRow.name || "بدون اسم"
-        }`,
+        `الرقم القومي غير صحيح للمنسق: ${invalidRow.name || "بدون اسم"}`,
       );
       return;
     }
@@ -1044,43 +912,24 @@ export default function SecurityManagement() {
     setCoordinatorSuccess("");
 
     try {
-      const result = await requestData(
-        "security/import-coordinators",
-        "POST",
-        {
-          national_ids: selectedRows.map(
-            (item) => item.national_id_number,
-          ),
+      const result = await requestData("security/import-coordinators", "POST", {
+        national_ids: selectedRows.map((item) => item.national_id_number),
 
-          reviews: selectedRows.map((item) => ({
-            national_id_number: item.national_id_number,
+        reviews: selectedRows.map((item) => ({
+          national_id_number: item.national_id_number,
 
-            security_status: getNormalizedStatus(
-              item.security_status,
-            ),
+          security_status: getNormalizedStatus(item.security_status),
 
-            notes: String(
-              item.review_notes ?? "",
-            ).trim(),
-          })),
-        },
-      );
+          notes: String(item.review_notes ?? "").trim(),
+        })),
+      });
 
       const imported =
-        result?.imported ??
-        result?.inserted ??
-        result?.added ??
-        0;
+        result?.imported ?? result?.inserted ?? result?.added ?? 0;
 
-      const updated =
-        result?.updated ??
-        result?.reviewed ??
-        0;
+      const updated = result?.updated ?? result?.reviewed ?? 0;
 
-      const skipped =
-        result?.skipped ??
-        result?.existing ??
-        0;
+      const skipped = result?.skipped ?? result?.existing ?? 0;
 
       setCoordinatorSuccess(
         `تمت معالجة ${selectedRows.length} منسق بنجاح. ` +
@@ -1092,14 +941,10 @@ export default function SecurityManagement() {
       await openCoordinatorReview();
       await loadRecords();
     } catch (err) {
-      console.error(
-        "Save/import coordinators error:",
-        err,
-      );
+      console.error("Save/import coordinators error:", err);
 
       setCoordinatorError(
-        err.message ||
-          "حدث خطأ أثناء حفظ مراجعة المنسقين وإضافتهم.",
+        err.message || "حدث خطأ أثناء حفظ مراجعة المنسقين وإضافتهم.",
       );
     } finally {
       setCoordinatorSaving(false);
@@ -1143,9 +988,7 @@ export default function SecurityManagement() {
 
     const encodedNationalId = encodeURIComponent(nationalId);
 
-    const data = await requestData(
-      `security/national-id/${encodedNationalId}`,
-    );
+    const data = await requestData(`security/national-id/${encodedNationalId}`);
 
     const person = data?.record;
 
@@ -1155,27 +998,15 @@ export default function SecurityManagement() {
 
     const normalizedPerson = normalizePersonRecord(person);
 
-    const incidents = getRecordsArray(person.incidents).map(
-      (incident) =>
-        normalizeIncidentRecord(
-          incident,
-          normalizedPerson,
-        ),
+    const incidents = getRecordsArray(person.incidents).map((incident) =>
+      normalizeIncidentRecord(incident, normalizedPerson),
     );
 
-    const permits = getRecordsArray(person.permits).map(
-      (permit) =>
-        normalizePermitRecord(
-          permit,
-          normalizedPerson,
-        ),
+    const permits = getRecordsArray(person.permits).map((permit) =>
+      normalizePermitRecord(permit, normalizedPerson),
     );
 
-    return [
-      normalizedPerson,
-      ...incidents,
-      ...permits,
-    ];
+    return [normalizedPerson, ...incidents, ...permits];
   }
 
   function selectEditTarget(target) {
@@ -1192,9 +1023,7 @@ export default function SecurityManagement() {
 
     setSelectedEditKey(key);
 
-    const target = editTargets.find(
-      (record) => getRecordKey(record) === key,
-    );
+    const target = editTargets.find((record) => getRecordKey(record) === key);
 
     if (target) {
       selectEditTarget(target);
@@ -1223,19 +1052,14 @@ export default function SecurityManagement() {
 
       const clickedType = getRecordType(item);
 
-      const clickedId = String(
-        item.source_record_id ?? item.id ?? "",
-      );
+      const clickedId = String(item.source_record_id ?? item.id ?? "");
 
       const initialTarget =
         targets.find((target) => {
-          const targetId = String(
-            target.source_record_id ?? target.id ?? "",
-          );
+          const targetId = String(target.source_record_id ?? target.id ?? "");
 
           return (
-            getRecordType(target) === clickedType &&
-            targetId === clickedId
+            getRecordType(target) === clickedType && targetId === clickedId
           );
         }) || targets[0];
 
@@ -1243,10 +1067,7 @@ export default function SecurityManagement() {
         selectEditTarget(initialTarget);
       }
     } catch (err) {
-      console.error(
-        "Load related security records error:",
-        err,
-      );
+      console.error("Load related security records error:", err);
 
       setEditTargetsError(
         err.message ||
@@ -1316,26 +1137,17 @@ export default function SecurityManagement() {
       return "الرقم القومي يجب أن يتكون من 14 رقمًا.";
     }
 
-    if (
-      editingRecord &&
-      !JOB_OPTIONS.includes(form.job)
-    ) {
+    if (editingRecord && !JOB_OPTIONS.includes(form.job)) {
       return "يرجى اختيار وظيفة صحيحة.";
     }
 
     if (
-      !SECURITY_STATUSES.includes(
-        getNormalizedStatus(form.security_status),
-      )
+      !SECURITY_STATUSES.includes(getNormalizedStatus(form.security_status))
     ) {
       return "يرجى اختيار موقف أمني صحيح.";
     }
 
-    if (
-      !FILE_TYPE_OPTIONS.includes(
-        getNormalizedFileType(form.file_type),
-      )
-    ) {
+    if (!FILE_TYPE_OPTIONS.includes(getNormalizedFileType(form.file_type))) {
       return "يرجى اختيار نوع ملف صحيح.";
     }
 
@@ -1349,12 +1161,8 @@ export default function SecurityManagement() {
 
     if (
       form.value_of_stolen_goods !== "" &&
-      (
-        !Number.isFinite(
-          Number(form.value_of_stolen_goods),
-        ) ||
-        Number(form.value_of_stolen_goods) < 0
-      )
+      (!Number.isFinite(Number(form.value_of_stolen_goods)) ||
+        Number(form.value_of_stolen_goods) < 0)
     ) {
       return "يرجى إدخال قيمة صحيحة للبضاعة.";
     }
@@ -1388,8 +1196,7 @@ export default function SecurityManagement() {
 
   function validateCreatePermitForm() {
     const hasPermitData =
-      form.permit_number.trim() !== "" ||
-      form.permit_issue_date !== "";
+      form.permit_number.trim() !== "" || form.permit_issue_date !== "";
 
     if (!hasPermitData) return "";
 
@@ -1400,35 +1207,36 @@ export default function SecurityManagement() {
   /* Payload Builders                                                         */
   /* ------------------------------------------------------------------------ */
 
-  function buildPersonPayload() {
-    return {
-      name: form.name.trim(),
+function buildPersonPayload() {
+  return {
+    name: form.name.trim(),
 
-      national_id_number:
-        form.national_id_number.trim(),
+    national_id_number:
+      form.national_id_number.trim(),
 
-      job: editingRecord ? form.job : "عميل",
+    job: editingRecord ? form.job : "عميل",
 
-      governorate: form.governorate || null,
+    area: form.area.trim() || null,
 
-      file_type:
-        getNormalizedFileType(form.file_type) || null,
+    governorate: form.governorate || null,
 
-      security_status:
-        getNormalizedStatus(form.security_status),
+    file_type:
+      getNormalizedFileType(form.file_type) || null,
 
-      notes: form.notes || null,
+    security_status:
+      getNormalizedStatus(form.security_status),
 
-      birth_date: form.birth_date || null,
+    notes: form.notes || null,
 
-      birth_place: form.birth_place.trim() || null,
-    };
-  }
+    birth_date: form.birth_date || null,
+
+    birth_place: form.birth_place.trim() || null,
+  };
+}
 
   function buildIncidentPayload() {
     return {
-      stolen_goods:
-        form.stolen_goods.trim() || null,
+      stolen_goods: form.stolen_goods.trim() || null,
 
       value_of_stolen_goods:
         form.value_of_stolen_goods === ""
@@ -1440,21 +1248,17 @@ export default function SecurityManagement() {
       // فرع الواقعة مستقل تمامًا عن بيانات الشخص والتصريح.
       incident_branch: form.incident_branch || null,
 
-      incident_notes:
-        form.notes.trim() || null,
+      incident_notes: form.notes.trim() || null,
     };
   }
 
   function buildPermitPayload() {
     return {
-      permit_number:
-        form.permit_number.trim() || null,
+      permit_number: form.permit_number.trim() || null,
 
-      permit_issue_date:
-        form.permit_issue_date || null,
+      permit_issue_date: form.permit_issue_date || null,
 
-      permit_notes:
-        form.notes.trim() || null,
+      permit_notes: form.notes.trim() || null,
     };
   }
 
@@ -1463,9 +1267,7 @@ export default function SecurityManagement() {
   /* ------------------------------------------------------------------------ */
 
   async function updateIncident() {
-    const incidentId =
-      editingRecord.source_record_id ??
-      editingRecord.id;
+    const incidentId = editingRecord.source_record_id ?? editingRecord.id;
 
     if (!incidentId) {
       throw new Error("رقم الواقعة غير موجود.");
@@ -1481,9 +1283,7 @@ export default function SecurityManagement() {
   }
 
   async function updatePermit() {
-    const permitId =
-      editingRecord.source_record_id ??
-      editingRecord.id;
+    const permitId = editingRecord.source_record_id ?? editingRecord.id;
 
     if (!permitId) {
       throw new Error("رقم التصريح غير موجود.");
@@ -1503,9 +1303,7 @@ export default function SecurityManagement() {
       throw new Error("الرقم القومي للشخص غير موجود.");
     }
 
-    const nationalId = encodeURIComponent(
-      editingRecord.national_id_number,
-    );
+    const nationalId = encodeURIComponent(editingRecord.national_id_number);
 
     await requestData(
       `security/national-id/${nationalId}`,
@@ -1531,15 +1329,9 @@ export default function SecurityManagement() {
       ...buildPermitPayload(),
     };
 
-    await requestData(
-      "security",
-      "POST",
-      payload,
-    );
+    await requestData("security", "POST", payload);
 
-    setSuccess(
-      "تمت إضافة العميل والبيانات المرتبطة به بنجاح.",
-    );
+    setSuccess("تمت إضافة العميل والبيانات المرتبطة به بنجاح.");
   }
 
   /* ------------------------------------------------------------------------ */
@@ -1612,9 +1404,7 @@ export default function SecurityManagement() {
     } catch (err) {
       console.error("Save security record error:", err);
 
-      setFormError(
-        err.message || "تعذر حفظ بيانات السجل.",
-      );
+      setFormError(err.message || "تعذر حفظ بيانات السجل.");
     } finally {
       setSaving(false);
     }
@@ -1630,9 +1420,7 @@ export default function SecurityManagement() {
     }
 
     if (!item.national_id_number) {
-      setError(
-        "لا يمكن تعطيل السجل لعدم وجود رقم قومي.",
-      );
+      setError("لا يمكن تعطيل السجل لعدم وجود رقم قومي.");
       return;
     }
 
@@ -1652,30 +1440,21 @@ export default function SecurityManagement() {
     setSuccess("");
 
     try {
-      const nationalId = encodeURIComponent(
-        item.national_id_number,
-      );
+      const nationalId = encodeURIComponent(item.national_id_number);
 
-      await requestData(
-        `security/national-id/${nationalId}`,
-        "DELETE",
-      );
+      await requestData(`security/national-id/${nationalId}`, "DELETE");
 
       setSuccess("تم تعطيل سجل الشخص بنجاح.");
 
       if (rows.length === 1 && page > 1) {
-        setPage((previous) =>
-          Math.max(1, previous - 1),
-        );
+        setPage((previous) => Math.max(1, previous - 1));
       } else {
         await loadRecords();
       }
     } catch (err) {
       console.error("Delete security record error:", err);
 
-      setError(
-        err.message || "تعذر تعطيل سجل الشخص.",
-      );
+      setError(err.message || "تعذر تعطيل سجل الشخص.");
     } finally {
       setDeletingId(null);
     }
@@ -1749,12 +1528,10 @@ export default function SecurityManagement() {
       }
 
       counts.incidents +=
-        getPersonIncidents(item).length ||
-        (isIncident(item) ? 1 : 0);
+        getPersonIncidents(item).length || (isIncident(item) ? 1 : 0);
 
       counts.permits +=
-        getPersonPermits(item).length ||
-        (isPermit(item) ? 1 : 0);
+        getPersonPermits(item).length || (isPermit(item) ? 1 : 0);
     });
 
     return counts;
@@ -1805,9 +1582,7 @@ export default function SecurityManagement() {
 
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-orange-700">
-              إدارة الأمن
-            </h1>
+            <h1 className="text-2xl font-bold text-orange-700">إدارة الأمن</h1>
 
             <p className="mt-1 text-sm text-gray-500">
               إدارة ومتابعة بيانات الأشخاص والوقائع والتصاريح والمواقف الأمنية
@@ -1823,17 +1598,15 @@ export default function SecurityManagement() {
               العودة لنظام التسويق
             </button>
 
-            {canViewSecurity &&
-              canEditSecurity &&
-              canCreateSecurity && (
-                <button
-                  type="button"
-                  onClick={openCoordinatorReview}
-                  className="rounded-lg bg-blue-600 px-5 py-2.5 font-semibold text-white shadow hover:bg-blue-700"
-                >
-                  جلب ومراجعة المنسقين
-                </button>
-              )}
+            {canViewSecurity && canEditSecurity && canCreateSecurity && (
+              <button
+                type="button"
+                onClick={openCoordinatorReview}
+                className="rounded-lg bg-blue-600 px-5 py-2.5 font-semibold text-white shadow hover:bg-blue-700"
+              >
+                جلب ومراجعة المنسقين
+              </button>
+            )}
 
             {canCreateSecurity && (
               <button
@@ -1924,18 +1697,14 @@ export default function SecurityManagement() {
             <input
               type="text"
               value={search}
-              onChange={(event) =>
-                handleSearchChange(event.target.value)
-              }
+              onChange={(event) => handleSearchChange(event.target.value)}
               placeholder="بحث بالاسم أو الرقم القومي أو السبب أو التصريح..."
               className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-orange-500"
             />
 
             <select
               value={jobFilter}
-              onChange={(event) =>
-                handleJobChange(event.target.value)
-              }
+              onChange={(event) => handleJobChange(event.target.value)}
               className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-orange-500"
             >
               <option value="">كل الوظائف</option>
@@ -1949,9 +1718,7 @@ export default function SecurityManagement() {
 
             <select
               value={statusFilter}
-              onChange={(event) =>
-                handleStatusChange(event.target.value)
-              }
+              onChange={(event) => handleStatusChange(event.target.value)}
               className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-orange-500"
             >
               <option value="">كل المواقف الأمنية</option>
@@ -1965,16 +1732,12 @@ export default function SecurityManagement() {
 
             <select
               value={fileTypeFilter}
-              onChange={(event) =>
-                handleFileTypeChange(event.target.value)
-              }
+              onChange={(event) => handleFileTypeChange(event.target.value)}
               className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-orange-500"
             >
               <option value="">كل أنواع الملفات</option>
               <option value="25">25</option>
-              <option value="مناديب/منسقين">
-                مناديب/منسقين
-              </option>
+              <option value="مناديب/منسقين">مناديب/منسقين</option>
             </select>
 
             <button
@@ -1991,9 +1754,7 @@ export default function SecurityManagement() {
 
         <div className="w-full min-w-0 overflow-hidden rounded-xl bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b p-4">
-            <h2 className="font-bold text-gray-800">
-              سجلات الأمن
-            </h2>
+            <h2 className="font-bold text-gray-800">سجلات الأمن</h2>
 
             <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
               <span>إجمالي الأشخاص: {pagination.total}</span>
@@ -2094,12 +1855,9 @@ export default function SecurityManagement() {
                             </button>
                           )}
 
-                          {!canEditSecurity &&
-                            !canDeleteSecurity && (
-                              <span className="text-gray-400">
-                                -
-                              </span>
-                            )}
+                          {!canEditSecurity && !canDeleteSecurity && (
+                            <span className="text-gray-400">-</span>
+                          )}
                         </td>
 
                         {/* Person */}
@@ -2112,36 +1870,25 @@ export default function SecurityManagement() {
                           {item.national_id_number || "-"}
                         </td>
 
-                        <td className="px-4 py-3">
-                          {item.job || "-"}
-                        </td>
+                        <td className="px-4 py-3">{item.job || "-"}</td>
 
                         {/* البيانات القديمة تظل ظاهرة من قاعدة البيانات */}
 
-                        <td className="px-4 py-3">
-                          {getCompanyName(item)}
-                        </td>
+                        <td className="px-4 py-3">{getCompanyName(item)}</td>
 
                         <td className="px-4 py-3">
                           {getAdvertisingCompanyName(item)}
                         </td>
 
-                        <td className="px-4 py-3">
-                          {getAreaName(item)}
-                        </td>
+                        <td className="px-4 py-3">{getAreaName(item)}</td>
 
-                        <td className="px-4 py-3">
-                          {item.governorate || "-"}
-                        </td>
+                        <td className="px-4 py-3">{item.governorate || "-"}</td>
 
                         {/* Incident */}
 
                         <td className="min-w-45 px-4 py-3 align-top">
                           <div className="whitespace-pre-wrap leading-7">
-                            {getIncidentBranches(
-                              item,
-                              branchOptions,
-                            )}
+                            {getIncidentBranches(item, branchOptions)}
                           </div>
                         </td>
 
@@ -2206,10 +1953,7 @@ export default function SecurityManagement() {
                 <>
                   عرض {(page - 1) * PAGE_SIZE + 1}
                   {" - "}
-                  {Math.min(
-                    page * PAGE_SIZE,
-                    pagination.total,
-                  )}
+                  {Math.min(page * PAGE_SIZE, pagination.total)}
                   {" من "}
                   {pagination.total}
                   {" شخص"}
@@ -2220,32 +1964,21 @@ export default function SecurityManagement() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                disabled={
-                  !pagination.hasPreviousPage || loading
-                }
-                onClick={() =>
-                  setPage((previous) =>
-                    Math.max(1, previous - 1),
-                  )
-                }
+                disabled={!pagination.hasPreviousPage || loading}
+                onClick={() => setPage((previous) => Math.max(1, previous - 1))}
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 السابق
               </button>
 
               <span className="px-3 text-sm font-semibold text-gray-700">
-                صفحة {page} من{" "}
-                {Math.max(1, pagination.totalPages)}
+                صفحة {page} من {Math.max(1, pagination.totalPages)}
               </span>
 
               <button
                 type="button"
-                disabled={
-                  !pagination.hasNextPage || loading
-                }
-                onClick={() =>
-                  setPage((previous) => previous + 1)
-                }
+                disabled={!pagination.hasNextPage || loading}
+                onClick={() => setPage((previous) => previous + 1)}
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 التالي
@@ -2269,7 +2002,8 @@ export default function SecurityManagement() {
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-500">
-                  راجع الموقف الأمني وأضف ملاحظات قبل إدخال الأشخاص إلى سجلات الأمن.
+                  راجع الموقف الأمني وأضف ملاحظات قبل إدخال الأشخاص إلى سجلات
+                  الأمن.
                 </p>
               </div>
 
@@ -2305,9 +2039,7 @@ export default function SecurityManagement() {
               <input
                 type="search"
                 value={coordinatorSearch}
-                onChange={(event) =>
-                  setCoordinatorSearch(event.target.value)
-                }
+                onChange={(event) => setCoordinatorSearch(event.target.value)}
                 placeholder="بحث بالاسم أو الرقم القومي أو الوظيفة أو النوع..."
                 className="min-w-55 flex-1 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-blue-500"
               />
@@ -2343,21 +2075,18 @@ export default function SecurityManagement() {
                             coordinatorRows.length > 0 &&
                             coordinatorRows.every(
                               (item) =>
-                                item.selected ||
-                                item.deleted_security_record,
+                                item.selected || item.deleted_security_record,
                             )
                           }
                           onChange={(event) => {
-                            const checked =
-                              event.target.checked;
+                            const checked = event.target.checked;
 
                             setCoordinatorRows((previous) =>
                               previous.map((item) => ({
                                 ...item,
 
                                 selected:
-                                  checked &&
-                                  !item.deleted_security_record,
+                                  checked && !item.deleted_security_record,
                               })),
                             );
                           }}
@@ -2365,37 +2094,23 @@ export default function SecurityManagement() {
                         />
                       </th>
 
-                      <th className="whitespace-nowrap px-3 py-3">
-                        الاسم
-                      </th>
+                      <th className="whitespace-nowrap px-3 py-3">الاسم</th>
 
                       <th className="whitespace-nowrap px-3 py-3">
                         الرقم القومي
                       </th>
 
-                      <th className="whitespace-nowrap px-3 py-3">
-                        الوظيفة
-                      </th>
+                      <th className="whitespace-nowrap px-3 py-3">الوظيفة</th>
 
-                      <th className="whitespace-nowrap px-3 py-3">
-                        النوع
-                      </th>
+                      <th className="whitespace-nowrap px-3 py-3">النوع</th>
 
-                      <th className="whitespace-nowrap px-3 py-3">
-                        الشركة
-                      </th>
+                      <th className="whitespace-nowrap px-3 py-3">الشركة</th>
 
-                      <th className="whitespace-nowrap px-3 py-3">
-                        الفرع
-                      </th>
+                      <th className="whitespace-nowrap px-3 py-3">الفرع</th>
 
-                      <th className="min-w-45 px-3 py-3">
-                        الموقف الأمني
-                      </th>
+                      <th className="min-w-45 px-3 py-3">الموقف الأمني</th>
 
-                      <th className="min-w-70 px-3 py-3">
-                        ملاحظات جديدة
-                      </th>
+                      <th className="min-w-70 px-3 py-3">ملاحظات جديدة</th>
 
                       <th className="whitespace-nowrap px-3 py-3">
                         حالة الاستيراد
@@ -2405,12 +2120,9 @@ export default function SecurityManagement() {
 
                   <tbody className="divide-y divide-gray-100">
                     {filteredCoordinatorRows.map((item) => {
-                      const disabled = Boolean(
-                        item.deleted_security_record,
-                      );
+                      const disabled = Boolean(item.deleted_security_record);
 
-                      const sourceType =
-                        getCoordinatorSourceType(item);
+                      const sourceType = getCoordinatorSourceType(item);
 
                       return (
                         <tr
@@ -2423,9 +2135,7 @@ export default function SecurityManagement() {
                             <input
                               type="checkbox"
                               checked={Boolean(item.selected)}
-                              disabled={
-                                disabled || coordinatorSaving
-                              }
+                              disabled={disabled || coordinatorSaving}
                               onChange={(event) =>
                                 updateCoordinatorReviewRow(
                                   item.national_id_number,
@@ -2461,18 +2171,14 @@ export default function SecurityManagement() {
                           </td>
 
                           <td className="whitespace-nowrap px-3 py-3">
-                            {item.branch_name ||
-                              item.branch ||
-                              "-"}
+                            {item.branch_name || item.branch || "-"}
                           </td>
 
                           <td className="px-3 py-3">
                             <select
                               value={item.security_status}
                               disabled={
-                                disabled ||
-                                !item.selected ||
-                                coordinatorSaving
+                                disabled || !item.selected || coordinatorSaving
                               }
                               onChange={(event) =>
                                 updateCoordinatorReviewRow(
@@ -2483,16 +2189,11 @@ export default function SecurityManagement() {
                               }
                               className="w-full rounded-lg border border-gray-300 bg-white px-2 py-2 outline-none focus:border-blue-500 disabled:bg-gray-100"
                             >
-                              {SECURITY_STATUSES.map(
-                                (status) => (
-                                  <option
-                                    key={status}
-                                    value={status}
-                                  >
-                                    {status}
-                                  </option>
-                                ),
-                              )}
+                              {SECURITY_STATUSES.map((status) => (
+                                <option key={status} value={status}>
+                                  {status}
+                                </option>
+                              ))}
                             </select>
                           </td>
 
@@ -2505,26 +2206,22 @@ export default function SecurityManagement() {
                                 ""
                               }
                               onChange={(event) => {
-                                const value =
-                                  event.target.value;
+                                const value = event.target.value;
 
-                                setCoordinatorRows(
-                                  (previous) =>
-                                    previous.map((row) =>
-                                      row.national_id_number ===
-                                      item.national_id_number
-                                        ? {
-                                            ...row,
-                                            review_notes: value,
-                                          }
-                                        : row,
-                                    ),
+                                setCoordinatorRows((previous) =>
+                                  previous.map((row) =>
+                                    row.national_id_number ===
+                                    item.national_id_number
+                                      ? {
+                                          ...row,
+                                          review_notes: value,
+                                        }
+                                      : row,
+                                  ),
                                 );
                               }}
                               disabled={
-                                disabled ||
-                                !item.selected ||
-                                coordinatorSaving
+                                disabled || !item.selected || coordinatorSaving
                               }
                               placeholder="اكتب الملاحظات هنا..."
                               rows={3}
@@ -2569,17 +2266,15 @@ export default function SecurityManagement() {
             <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-gray-50 p-4 sm:px-5">
               <p className="text-xs leading-6 text-gray-500">
                 سيتم حفظ مراجعة الأشخاص المحددين وإضافة السجلات الجديدة فقط.
-                سيتم تحديث موقف وملاحظات السجلات الموجودة بالفعل دون إنشاء سجل أمني مكرر.
-                لا يتم إنشاء وقائع أو تصاريح تلقائيًا.
+                سيتم تحديث موقف وملاحظات السجلات الموجودة بالفعل دون إنشاء سجل
+                أمني مكرر. لا يتم إنشاء وقائع أو تصاريح تلقائيًا.
               </p>
 
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={openCoordinatorReview}
-                  disabled={
-                    coordinatorLoading || coordinatorSaving
-                  }
+                  disabled={coordinatorLoading || coordinatorSaving}
                   className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
                 >
                   إعادة تحميل
@@ -2652,9 +2347,7 @@ export default function SecurityManagement() {
                       {editTargets.map((target) => {
                         const type = getRecordType(target);
 
-                        const id =
-                          target.source_record_id ??
-                          target.id;
+                        const id = target.source_record_id ?? target.id;
 
                         let label = "بيانات الشخص";
 
@@ -2682,12 +2375,12 @@ export default function SecurityManagement() {
                     </p>
                   )}
 
-                  {!loadingEditTargets &&
-                    !editTargetsError && (
-                      <p className="mt-2 text-xs text-gray-600">
-                        يمكنك التبديل بين بيانات الشخص وجميع الوقائع والتصاريح المرتبطة به.
-                      </p>
-                    )}
+                  {!loadingEditTargets && !editTargetsError && (
+                    <p className="mt-2 text-xs text-gray-600">
+                      يمكنك التبديل بين بيانات الشخص وجميع الوقائع والتصاريح
+                      المرتبطة به.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -2761,7 +2454,7 @@ export default function SecurityManagement() {
                         name="area"
                         value={form.area || ""}
                         onChange={handleChange}
-                        placeholder="اسم المنطقة"
+                         placeholder="اسم المنطقة"
                         className="form-input"
                       />
                     </FormField>
@@ -2776,10 +2469,7 @@ export default function SecurityManagement() {
                         <option value="">اختر المحافظة</option>
 
                         {GOVERNORATES.map((governorate) => (
-                          <option
-                            key={governorate}
-                            value={governorate}
-                          >
+                          <option key={governorate} value={governorate}>
                             {governorate}
                           </option>
                         ))}
@@ -2796,10 +2486,7 @@ export default function SecurityManagement() {
                         <option value="">اختر نوع الملف</option>
 
                         {FILE_TYPE_OPTIONS.map((fileType) => (
-                          <option
-                            key={fileType}
-                            value={fileType}
-                          >
+                          <option key={fileType} value={fileType}>
                             {fileType}
                           </option>
                         ))}
@@ -2809,9 +2496,7 @@ export default function SecurityManagement() {
                     <FormField label="الموقف الأمني">
                       <select
                         name="security_status"
-                        value={getNormalizedStatus(
-                          form.security_status,
-                        )}
+                        value={getNormalizedStatus(form.security_status)}
                         onChange={handleChange}
                         className="form-input"
                       >
@@ -3046,9 +2731,7 @@ function FormField({ label, required = false, children }) {
       <label className="mb-1.5 block text-sm font-semibold text-gray-700">
         {label}
 
-        {required && (
-          <span className="mr-1 text-red-500">*</span>
-        )}
+        {required && <span className="mr-1 text-red-500">*</span>}
       </label>
 
       {children}
@@ -3074,9 +2757,7 @@ function StatCard({ title, value, color }) {
     >
       <p className="text-sm text-gray-500">{title}</p>
 
-      <p className="mt-2 text-2xl font-bold">
-        {value}
-      </p>
+      <p className="mt-2 text-2xl font-bold">{value}</p>
     </div>
   );
 }
