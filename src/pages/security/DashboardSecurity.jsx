@@ -12,6 +12,7 @@ const SECURITY_VIEW_PERMISSION_ID = 41;
 
 const numberFormat = new Intl.NumberFormat("ar-EG");
 const currencyFormat = new Intl.NumberFormat("ar-EG", {
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
 });
 
@@ -28,7 +29,167 @@ const percentage = (value, total) => {
         (Number(value || 0) / Number(total)) * 100
     );
 };
+/* -------------------------------------------------------------------------- */
+/* Currency Breakdown in Arabic Words                                        */
+/* -------------------------------------------------------------------------- */
 
+const arabicNumberWords = (value) => {
+    const number = Math.floor(Math.abs(Number(value) || 0));
+
+    if (number === 0) return "صفر";
+
+    const ones = [
+        "",
+        "واحد",
+        "اثنان",
+        "ثلاثة",
+        "أربعة",
+        "خمسة",
+        "ستة",
+        "سبعة",
+        "ثمانية",
+        "تسعة",
+    ];
+
+    const teens = [
+        "عشرة",
+        "أحد عشر",
+        "اثنا عشر",
+        "ثلاثة عشر",
+        "أربعة عشر",
+        "خمسة عشر",
+        "ستة عشر",
+        "سبعة عشر",
+        "ثمانية عشر",
+        "تسعة عشر",
+    ];
+
+    const tens = [
+        "",
+        "",
+        "عشرون",
+        "ثلاثون",
+        "أربعون",
+        "خمسون",
+        "ستون",
+        "سبعون",
+        "ثمانون",
+        "تسعون",
+    ];
+
+    const hundreds = [
+        "",
+        "مائة",
+        "مائتان",
+        "ثلاثمائة",
+        "أربعمائة",
+        "خمسمائة",
+        "ستمائة",
+        "سبعمائة",
+        "ثمانمائة",
+        "تسعمائة",
+    ];
+
+    const convertUnderThousand = (n) => {
+        const parts = [];
+
+        const h = Math.floor(n / 100);
+        const remainder = n % 100;
+
+        if (h > 0) parts.push(hundreds[h]);
+
+        if (remainder >= 10 && remainder <= 19) {
+            parts.push(teens[remainder - 10]);
+        } else {
+            const unit = remainder % 10;
+            const ten = Math.floor(remainder / 10);
+
+            if (unit > 0 && ten > 0) {
+                parts.push(ones[unit]);
+            } else if (unit > 0) {
+                parts.push(ones[unit]);
+            }
+
+            if (ten > 1) {
+                parts.push(tens[ten]);
+            }
+        }
+
+        return parts.join(" و ");
+    };
+
+    if (number < 1000) {
+        return convertUnderThousand(number);
+    }
+
+    const groups = [
+        { value: 1000000, singular: "مليون", dual: "مليونان", plural: "مليون" },
+        { value: 1000, singular: "ألف", dual: "ألفان", plural: "ألف" },
+    ];
+
+    const result = [];
+    let remainder = number;
+
+    for (const group of groups) {
+        const count = Math.floor(remainder / group.value);
+
+        if (count > 0) {
+            let text;
+
+            if (count === 1) {
+                text = group.singular;
+            } else if (count === 2) {
+                text = group.dual;
+            } else {
+                text = `${convertUnderThousand(count)} ${group.plural}`;
+            }
+
+            result.push(text);
+            remainder %= group.value;
+        }
+    }
+
+    if (remainder > 0) {
+        result.push(convertUnderThousand(remainder));
+    }
+
+    return result.join(" و ");
+};
+
+const getCurrencyBreakdown = (value) => {
+    const numericValue = Number(value);
+
+    if (!Number.isFinite(numericValue)) {
+        return "صفر جنيه";
+    }
+
+    const amountInPiastres = Math.round(
+        Math.abs(numericValue) * 100
+    );
+
+    const pounds = Math.floor(amountInPiastres / 100);
+    const piastres = amountInPiastres % 100;
+
+    if (pounds === 0 && piastres === 0) {
+        return "صفر جنيه";
+    }
+
+    const parts = [];
+
+    if (pounds > 0) {
+        parts.push(`${arabicNumberWords(pounds)} جنيهًا`);
+    }
+
+    if (piastres > 0) {
+        parts.push(`${arabicNumberWords(piastres)} قرشًا`);
+    }
+
+    const result = parts.join(" و ");
+
+    return numericValue < 0
+        ? `سالب ${result}`
+        : result;
+};
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -321,6 +482,14 @@ function DashboardSecurity() {
     const totalPermits = Number(permits.total || 0);
     const totalHistory = Number(history.total || 0);
 
+    const stolenGoodsValue = Number(
+        incidents.stolenGoodsValue || 0
+    );
+
+    const stolenGoodsBreakdown = getCurrencyBreakdown(
+        stolenGoodsValue
+    );
+
     const statusChart = useMemo(
         () => [
             {
@@ -424,12 +593,12 @@ function DashboardSecurity() {
                     <div className="relative z-10 flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
                         <div>
                             <div className="mb-4 flex items-center gap-2 text-sm text-orange-100">
-<button
-    onClick={() => navigate("/security")}
-    className="transition hover:text-white"
->
-    نظام إدارة الأمن
-</button>
+                                <button
+                                    onClick={() => navigate("/security")}
+                                    className="transition hover:text-white"
+                                >
+                                    نظام إدارة الأمن
+                                </button>
 
                                 <span className="opacity-50">/</span>
 
@@ -687,6 +856,7 @@ function DashboardSecurity() {
                                     </div>
                                 </Panel>
 
+                                {/* Stolen Goods Value */}
                                 <Panel>
                                     <div className="flex items-center gap-3">
                                         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-2xl">
@@ -705,12 +875,25 @@ function DashboardSecurity() {
                                     </div>
 
                                     <p className="mt-7 text-3xl font-black text-slate-800">
-                                        {formatCurrency(
-                                            incidents.stolenGoodsValue
-                                        )}
+                                        {formatCurrency(stolenGoodsValue)} جنيه
                                     </p>
 
-                                    <p className="mt-2 text-xs text-slate-400">
+                                    {/* Detailed Currency Breakdown */}
+                                    <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                                        <div className="mb-2 flex items-center gap-2">
+                                            <span className="text-lg">🧮</span>
+
+                                            <p className="text-xs font-extrabold text-amber-800">
+                                                تفصيل المبلغ بالحروف والأجزاء
+                                            </p>
+                                        </div>
+
+                                        <p className="text-sm font-bold leading-8 text-amber-900">
+                                            {stolenGoodsBreakdown}
+                                        </p>
+                                    </div>
+
+                                    <p className="mt-3 text-xs text-slate-400">
                                         قيمة إجمالية حسب البيانات المسجلة
                                     </p>
                                 </Panel>
