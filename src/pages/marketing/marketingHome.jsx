@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -6,6 +7,9 @@ import { sendHttpReq } from "../../lib/httpHandler";
 import { useAuth } from "../../context/authContext";
 import { isAdmin, hasPermission } from "../../helpers/permissions";
 
+/* -------------------------------------------------------------------------- */
+/* Marketing Sections                                                         */
+/* -------------------------------------------------------------------------- */
 
 const marketingSections = [
   {
@@ -15,13 +19,13 @@ const marketingSections = [
     parentPermission: 38,
   },
   {
-    title: "نظام ادارة المندوبين والمنسقين",
-    description: "البيانات والاستثناءات",
+    title: "نظام إدارة المندوبين والمنسقين",
+    description: "إدارة البيانات والاستثناءات",
     path: "/marketing/coordinators",
     parentPermission: 7,
   },
   {
-    title: "نظام تصميم كارت",
+    title: "نظام تصميم الكروت",
     description: "تصميم وتجهيز الكروت للطباعة",
     path: "/marketing/card-designer",
     parentPermission: 4,
@@ -33,7 +37,7 @@ const marketingSections = [
     parentPermission: 17,
   },
   {
-    title: "نظام ادارة الكروت",
+    title: "نظام إدارة الكروت",
     description: "إدارة الكروت وبياناتها",
     path: "/marketing/card-management",
     parentPermission: 12,
@@ -44,21 +48,11 @@ const marketingSections = [
     path: "/marketing/temporary-coordinators",
     parentPermission: 27,
   },
-  {
-    title: "نظام إدارة الأمن",
-    description: "إدارة بيانات الأشخاص والأسباب والمواقف الأمنية",
-    path: "/marketing/security",
-    parentPermission: 33,
-  },
-  {
-    title: "إدارة التعيينات",
-    description:
-      "رفع ملفات المتقدمين وفحص الأرقام القومية ومراجعة قرارات التعيين",
-    path: "/marketing/recuritment",
-    parentPermission: 39,
-  },
 ];
 
+/* -------------------------------------------------------------------------- */
+/* Statistics Cards                                                           */
+/* -------------------------------------------------------------------------- */
 
 const cards = [
   {
@@ -95,6 +89,10 @@ const cards = [
   },
 ];
 
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
+
 function MarketingHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -111,8 +109,10 @@ function MarketingHome() {
 
   const admin = isAdmin(user);
 
-  // Admin sees all sections.
-  // Other users see sections according to their permissions.
+  /* ------------------------------------------------------------------------ */
+  /* Permissions                                                              */
+  /* ------------------------------------------------------------------------ */
+
   const visibleSections = useMemo(() => {
     if (!user) return [];
 
@@ -128,8 +128,17 @@ function MarketingHome() {
   // Permission 11 represents "عرض المناديب".
   const canViewStats = admin || hasPermission(user, 11);
 
+  /* ------------------------------------------------------------------------ */
+  /* Fetch Statistics                                                         */
+  /* ------------------------------------------------------------------------ */
+
   useEffect(() => {
-    if (!user || !canViewStats) return;
+    if (!user || !canViewStats) {
+      setStats(null);
+      setLoading(false);
+      setError("");
+      return;
+    }
 
     let cancelled = false;
 
@@ -142,7 +151,8 @@ function MarketingHome() {
 
         if (!response?.stats) {
           throw new Error(
-            response?.message || "استجابة السيرفر لا تحتوي على الإحصائيات.",
+            response?.message ||
+              "استجابة السيرفر لا تحتوي على الإحصائيات.",
           );
         }
 
@@ -169,6 +179,10 @@ function MarketingHome() {
     };
   }, [user, canViewStats, location.key]);
 
+  /* ------------------------------------------------------------------------ */
+  /* Fetch Records                                                            */
+  /* ------------------------------------------------------------------------ */
+
   const handleCardClick = async (card) => {
     if (!canViewStats) return;
 
@@ -190,11 +204,17 @@ function MarketingHome() {
     } catch (err) {
       console.error("Failed to load conduct records:", err);
 
-      setRecordsError(err.message || "حدث خطأ أثناء تحميل البيانات.");
+      setRecordsError(
+        err.message || "حدث خطأ أثناء تحميل البيانات.",
+      );
     } finally {
       setRecordsLoading(false);
     }
   };
+
+  /* ------------------------------------------------------------------------ */
+  /* Close Records                                                            */
+  /* ------------------------------------------------------------------------ */
 
   const closeRecords = () => {
     setSelectedCard(null);
@@ -202,6 +222,10 @@ function MarketingHome() {
     setRecordsError("");
     setRecordsLoading(false);
   };
+
+  /* ------------------------------------------------------------------------ */
+  /* Authentication                                                           */
+  /* ------------------------------------------------------------------------ */
 
   if (!user) {
     return (
@@ -226,6 +250,10 @@ function MarketingHome() {
     );
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                   */
+  /* ------------------------------------------------------------------------ */
+
   return (
     <>
       <div className="sticky top-0 z-50">
@@ -234,6 +262,8 @@ function MarketingHome() {
 
       <main dir="rtl" className="min-h-screen bg-slate-100 p-4 sm:p-8">
         <div className="mx-auto max-w-6xl">
+
+          {/* Page Header */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-3xl font-bold text-orange-600">
@@ -269,7 +299,9 @@ function MarketingHome() {
                       {section.title}
                     </h2>
 
-                    <p className="mt-3 text-gray-600">{section.description}</p>
+                    <p className="mt-3 text-gray-600">
+                      {section.description}
+                    </p>
                   </button>
                 ))}
               </div>
@@ -286,7 +318,7 @@ function MarketingHome() {
             )}
           </section>
 
-          {/* Existing Coordinator Statistics */}
+          {/* Coordinator Statistics */}
           {canViewStats && (
             <section className="mt-10">
               <div className="mb-5">
@@ -370,68 +402,76 @@ function MarketingHome() {
               )}
 
               {recordsError && (
-                <p className="p-6 text-center text-red-600">{recordsError}</p>
-              )}
-
-              {!recordsLoading && !recordsError && records.length === 0 && (
-                <p className="p-8 text-center text-slate-500">
-                  لا توجد بيانات في هذه الفئة.
+                <p className="p-6 text-center text-red-600">
+                  {recordsError}
                 </p>
               )}
 
-              {!recordsLoading && !recordsError && records.length > 0 && (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-900px text-right text-sm">
-                    <thead className="bg-slate-100 text-slate-700">
-                      <tr>
-                        <th className="px-4 py-3">الكود</th>
-                        <th className="px-4 py-3">الاسم</th>
-                        <th className="px-4 py-3">الوظيفة</th>
-                        <th className="px-4 py-3">الشركة</th>
-                        <th className="px-4 py-3">الحالة</th>
-                        <th className="px-4 py-3">انتهاء الشهادة الصحية</th>
-                      </tr>
-                    </thead>
+              {!recordsLoading &&
+                !recordsError &&
+                records.length === 0 && (
+                  <p className="p-8 text-center text-slate-500">
+                    لا توجد بيانات في هذه الفئة.
+                  </p>
+                )}
 
-                    <tbody className="divide-y divide-slate-100">
-                      {records.map((record) => (
-                        <tr
-                          key={record.id}
-                          className="transition hover:bg-orange-50"
-                        >
-                          <td className="whitespace-nowrap px-4 py-3">
-                            {record.code ?? "-"}
-                          </td>
-
-                          <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-800">
-                            {record.name ?? "-"}
-                          </td>
-
-                          <td className="whitespace-nowrap px-4 py-3">
-                            {record.job ?? "-"}
-                          </td>
-
-                          <td className="whitespace-nowrap px-4 py-3">
-                            {record.company_name ?? "-"}
-                          </td>
-
-                          <td className="whitespace-nowrap px-4 py-3">
-                            {record.states ?? "-"}
-                          </td>
-
-                          <td className="whitespace-nowrap px-4 py-3">
-                            {record.health_certificate_expiry_date
-                              ? new Date(
-                                  record.health_certificate_expiry_date,
-                                ).toLocaleDateString("en-GB")
-                              : "-"}
-                          </td>
+              {!recordsLoading &&
+                !recordsError &&
+                records.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-225 text-right text-sm">
+                      <thead className="bg-slate-100 text-slate-700">
+                        <tr>
+                          <th className="px-4 py-3">الكود</th>
+                          <th className="px-4 py-3">الاسم</th>
+                          <th className="px-4 py-3">الوظيفة</th>
+                          <th className="px-4 py-3">الشركة</th>
+                          <th className="px-4 py-3">الحالة</th>
+                          <th className="px-4 py-3">
+                            انتهاء الشهادة الصحية
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      </thead>
+
+                      <tbody className="divide-y divide-slate-100">
+                        {records.map((record) => (
+                          <tr
+                            key={record.id}
+                            className="transition hover:bg-orange-50"
+                          >
+                            <td className="whitespace-nowrap px-4 py-3">
+                              {record.code ?? "-"}
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-800">
+                              {record.name ?? "-"}
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-3">
+                              {record.job ?? "-"}
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-3">
+                              {record.company_name ?? "-"}
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-3">
+                              {record.states ?? "-"}
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-3">
+                              {record.health_certificate_expiry_date
+                                ? new Date(
+                                    record.health_certificate_expiry_date,
+                                  ).toLocaleDateString("en-GB")
+                                : "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
             </section>
           )}
         </div>

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import Header from "../../../components/header";
-import SearchableSelect from "../../../components/SearchableSelect";
-import { sendHttpReq } from "../../../lib/httpHandler";
-import { useAuth } from "../../../context/authContext";
-import { hasPermission, isAdmin } from "../../../helpers/permissions";
+import Header from "../../components/header";
+import SearchableSelect from "../../components/SearchableSelect";
+import { sendHttpReq } from "../../lib/httpHandler";
+import { useAuth } from "../../context/authContext";
+import { hasPermission, isAdmin } from "../../helpers/permissions";
 
 /* -------------------------------------------------------------------------- */
 /* Constants                                                                  */
@@ -16,17 +16,6 @@ const JOB_OPTIONS = ["عميل", "مندوب", "مندوبة", "منسق", "من
 const FILE_TYPE_OPTIONS = ["مناديب/منسقين", "25"];
 
 const SECURITY_STATUSES = ["سليم", "تحت المراجعة", "بلوك", "غير محدد"];
-
-const GOVERNORATES = [
-  "الإسكندرية",
-  "القاهرة",
-  "الجيزة",
-  "البحيرة",
-  "مطروح",
-  "الغربية",
-  "الدقهلية",
-  "الشرقية",
-];
 
 const PAGE_SIZE = 100;
 
@@ -1590,13 +1579,13 @@ function buildPersonPayload() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => navigate("/marketing")}
-              className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
-            >
-              العودة لنظام التسويق
-            </button>
+<button
+  type="button"
+  onClick={() => navigate("/security")}
+  className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+>
+  العودة لنظام الأمن
+</button>
 
             {canViewSecurity && canEditSecurity && canCreateSecurity && (
               <button
@@ -2459,22 +2448,16 @@ function buildPersonPayload() {
                       />
                     </FormField>
 
-                    <FormField label="المحافظة">
-                      <select
-                        name="governorate"
-                        value={form.governorate}
-                        onChange={handleChange}
-                        className="form-input"
-                      >
-                        <option value="">اختر المحافظة</option>
-
-                        {GOVERNORATES.map((governorate) => (
-                          <option key={governorate} value={governorate}>
-                            {governorate}
-                          </option>
-                        ))}
-                      </select>
-                    </FormField>
+<FormField label="المحافظة">
+  <input
+    type="text"
+    name="governorate"
+    value={form.governorate}
+    onChange={handleChange}
+    className="form-input"
+    placeholder="اكتب المحافظة"
+  />
+</FormField>
 
                     <FormField label="نوع الملف" required>
                       <select

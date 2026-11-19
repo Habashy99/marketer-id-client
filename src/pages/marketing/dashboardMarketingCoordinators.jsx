@@ -91,9 +91,7 @@ function StatCard({
         <div
             className={`group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl ${theme.glow}`}
         >
-            <div
-                className={`absolute right-0 top-0 h-full w-1 ${theme.line}`}
-            />
+            <div className={`absolute right-0 top-0 h-full w-1 ${theme.line}`} />
 
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -138,9 +136,7 @@ function ProgressRow({ label, value, total, color = "bg-orange-500" }) {
     return (
         <div className="space-y-2">
             <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="font-semibold text-slate-600">
-                    {label}
-                </span>
+                <span className="font-semibold text-slate-600">{label}</span>
 
                 <div className="text-left">
                     <span className="font-extrabold text-slate-800">
@@ -167,81 +163,6 @@ function ProgressRow({ label, value, total, color = "bg-orange-500" }) {
 /* Charts                                                                     */
 /* -------------------------------------------------------------------------- */
 
-function DonutChart({ items, total }) {
-    const segments = useMemo(() => {
-        let current = 0;
-
-        return items.map((item) => {
-            const value = total ? (item.value / total) * 100 : 0;
-            const start = current;
-            current += value;
-
-            return `${item.hex} ${start}% ${current}%`;
-        });
-    }, [items, total]);
-
-    const background = segments.length
-        ? `conic-gradient(${segments.join(", ")})`
-        : "#e2e8f0";
-
-    return (
-        <div className="flex flex-col items-center gap-7 sm:flex-row">
-            <div className="relative h-52 w-52 shrink-0">
-                <div
-                    className="h-full w-full rounded-full"
-                    style={{
-                        background,
-                        maskImage:
-                            "radial-gradient(circle, transparent 55%, black 56%)",
-                        WebkitMaskImage:
-                            "radial-gradient(circle, transparent 55%, black 56%)",
-                    }}
-                />
-
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-xs font-semibold text-slate-400">
-                        إجمالي السجلات
-                    </span>
-
-                    <span className="mt-1 text-3xl font-black text-slate-800">
-                        {formatNumber(total)}
-                    </span>
-                </div>
-            </div>
-
-            <div className="w-full flex-1 space-y-4">
-                {items.map((item) => (
-                    <div
-                        key={item.label}
-                        className="flex items-center justify-between gap-3"
-                    >
-                        <div className="flex min-w-0 items-center gap-2">
-                            <span
-                                className="h-3 w-3 shrink-0 rounded-full"
-                                style={{ backgroundColor: item.hex }}
-                            />
-
-                            <span className="truncate text-sm font-semibold text-slate-600">
-                                {item.label}
-                            </span>
-                        </div>
-
-                        <div className="shrink-0 text-left">
-                            <p className="text-sm font-extrabold text-slate-800">
-                                {formatNumber(item.value)}
-                            </p>
-
-                            <p className="text-xs text-slate-400">
-                                {percentage(item.value, total)}%
-                            </p>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}
-
 function VerticalBarChart({ items }) {
     const maxValue = Math.max(
         ...items.map((item) => Number(item.value) || 0),
@@ -252,7 +173,10 @@ function VerticalBarChart({ items }) {
         <div className="flex h-64 items-end justify-around gap-3 border-b border-slate-100 px-2 pb-3 pt-6">
             {items.map((item) => {
                 const value = Number(item.value) || 0;
-                const height = Math.max((value / maxValue) * 100, value ? 5 : 0);
+                const height = Math.max(
+                    (value / maxValue) * 100,
+                    value ? 5 : 0
+                );
 
                 return (
                     <div
@@ -277,14 +201,6 @@ function VerticalBarChart({ items }) {
                     </div>
                 );
             })}
-        </div>
-    );
-}
-
-function EmptyState({ message }) {
-    return (
-        <div className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
-            {message}
         </div>
     );
 }
@@ -317,7 +233,7 @@ function DashboardMarketingCoordinators() {
 
             setStats(response.stats);
         } catch (err) {
-            console.error("Dashboard loading error:", err);
+            console.error("Marketing dashboard loading error:", err);
             setError(err.message || "حدث خطأ أثناء تحميل البيانات.");
         } finally {
             setLoading(false);
@@ -335,11 +251,9 @@ function DashboardMarketingCoordinators() {
     const coordinatorData = stats?.coordinators || {};
     const temporaryData = stats?.temporaryCoordinators || {};
     const companiesData = stats?.advertisingCompanies || {};
-    const securityData = stats?.security || {};
 
     const totalPermanent = Number(coordinatorData.total || 0);
     const totalTemporary = Number(temporaryData.total || 0);
-    const totalSecurity = Number(securityData.total || 0);
 
     const totalRepresentatives =
         Number(coordinatorData.maleRepresentatives || 0) +
@@ -349,62 +263,42 @@ function DashboardMarketingCoordinators() {
         Number(coordinatorData.maleCoordinators || 0) +
         Number(coordinatorData.femaleCoordinators || 0);
 
-    const securityChart = useMemo(
+    const genderChart = useMemo(
         () => [
             {
-                label: "سليم",
-                value: Number(securityData.safe || 0),
-                color: "bg-emerald-500",
-                hex: "#10b981",
+                label: "مندوبون",
+                value: totalRepresentatives,
+                color: "bg-orange-500",
             },
             {
-                label: "تحت المراجعة",
-                value: Number(securityData.underReview || 0),
+                label: "منسقون",
+                value: totalCoordinators,
                 color: "bg-amber-500",
-                hex: "#f59e0b",
             },
             {
-                label: "بلوك / مرفوض",
-                value: Number(securityData.blocked || 0),
-                color: "bg-red-500",
-                hex: "#ef4444",
+                label: "ذكور",
+                value:
+                    Number(coordinatorData.maleRepresentatives || 0) +
+                    Number(coordinatorData.maleCoordinators || 0),
+                color: "bg-orange-700",
             },
             {
-                label: "غير محدد",
-                value: Number(securityData.unspecified || 0),
-                color: "bg-slate-400",
-                hex: "#94a3b8",
+                label: "إناث",
+                value:
+                    Number(coordinatorData.femaleRepresentatives || 0) +
+                    Number(coordinatorData.femaleCoordinators || 0),
+                color: "bg-yellow-500",
             },
         ],
-        [securityData]
+        [
+            totalRepresentatives,
+            totalCoordinators,
+            coordinatorData.maleRepresentatives,
+            coordinatorData.maleCoordinators,
+            coordinatorData.femaleRepresentatives,
+            coordinatorData.femaleCoordinators,
+        ]
     );
-
-    const genderChart = [
-        {
-            label: "مندوبون",
-            value: totalRepresentatives,
-            color: "bg-orange-500",
-        },
-        {
-            label: "منسقون",
-            value: totalCoordinators,
-            color: "bg-amber-500",
-        },
-        {
-            label: "ذكور",
-            value:
-                Number(coordinatorData.maleRepresentatives || 0) +
-                Number(coordinatorData.maleCoordinators || 0),
-            color: "bg-orange-700",
-        },
-        {
-            label: "إناث",
-            value:
-                Number(coordinatorData.femaleRepresentatives || 0) +
-                Number(coordinatorData.femaleCoordinators || 0),
-            color: "bg-yellow-500",
-        },
-    ];
 
     if (!user) {
         return (
@@ -492,11 +386,11 @@ function DashboardMarketingCoordinators() {
 
                                 <div>
                                     <h1 className="text-2xl font-black sm:text-3xl lg:text-4xl">
-                                        لوحة التحكم
+                                        لوحة تحكم إدارة التسويق
                                     </h1>
 
                                     <p className="mt-2 max-w-2xl text-sm leading-6 text-orange-100 sm:text-base">
-                                        نظرة شاملة على الأداء والأعداد والحالات الأمنية والشهادات الصحية والتعاقدات.
+                                        نظرة شاملة على أعداد المندوبين والمنسقين والشركات الإعلانية والشهادات الصحية والتعاقدات.
                                     </p>
                                 </div>
                             </div>
@@ -571,7 +465,7 @@ function DashboardMarketingCoordinators() {
                                 icon="📈"
                             />
 
-                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                                 <StatCard
                                     title="إجمالي المندوبين والمنسقين"
                                     value={totalPermanent}
@@ -594,14 +488,6 @@ function DashboardMarketingCoordinators() {
                                     subtitle="الشركات الفعالة"
                                     icon="🏢"
                                     color="orange"
-                                />
-
-                                <StatCard
-                                    title="السجلات الأمنية"
-                                    value={totalSecurity}
-                                    subtitle="إجمالي سجلات الأشخاص الأمنية"
-                                    icon="🛡️"
-                                    color="slate"
                                 />
                             </div>
                         </section>
@@ -815,77 +701,10 @@ function DashboardMarketingCoordinators() {
                             </div>
                         </Panel>
 
-                        {/* Security Dashboard */}
-                        <section>
-                            <SectionTitle
-                                title="مؤشرات إدارة الأمن"
-                                subtitle="توزيع السجلات وفق الحالة الأمنية المسجلة"
-                                icon="🛡️"
-                            />
-
-                            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                                <Panel>
-                                    <h3 className="mb-6 text-base font-extrabold text-slate-800">
-                                        الرسم البياني للحالات الأمنية
-                                    </h3>
-
-                                    <DonutChart
-                                        items={securityChart}
-                                        total={totalSecurity}
-                                    />
-
-                                    <div className="mt-7 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xl">⚠️</span>
-                                            <p className="text-sm font-extrabold text-amber-800">
-                                                تنبيه بخصوص الحالات غير المحددة
-                                            </p>
-                                        </div>
-
-                                        <p className="mt-2 text-xs leading-6 text-amber-700">
-                                            السجلات ذات الحالة غير المحددة لا تعني أن أصحابها سليمون أو عليهم مخالفات؛ وإنما تعني أن الحالة الأمنية لم يتم تحديدها.
-                                        </p>
-                                    </div>
-                                </Panel>
-
-                                <Panel>
-                                    <h3 className="mb-6 text-base font-extrabold text-slate-800">
-                                        تفاصيل الحالات الأمنية
-                                    </h3>
-
-                                    <div className="space-y-6">
-                                        {securityChart.map((item) => (
-                                            <ProgressRow
-                                                key={item.label}
-                                                label={item.label}
-                                                value={item.value}
-                                                total={totalSecurity}
-                                                color={item.color}
-                                            />
-                                        ))}
-                                    </div>
-
-                                    <div className="mt-7 rounded-2xl bg-linear-to-l from-orange-900 to-orange-700 p-5 text-white">
-                                        <p className="text-sm font-semibold text-orange-100">
-                                            إجمالي السجلات الأمنية
-                                        </p>
-
-                                        <p className="mt-2 text-4xl font-black">
-                                            {formatNumber(totalSecurity)}
-                                        </p>
-
-                                        <p className="mt-2 text-xs text-orange-200">
-                                            إجمالي السجلات الموجودة في قاعدة البيانات
-                                        </p>
-                                    </div>
-                                </Panel>
-                            </div>
-                        </section>
-
                         {/* Footer */}
                         <footer className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-xs text-slate-400 sm:flex-row sm:items-center">
                             <span className="font-bold text-slate-500">
-                                لوحة التحكم
+                                لوحة تحكم إدارة التسويق
                             </span>
 
                             <span>

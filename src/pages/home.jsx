@@ -1,6 +1,8 @@
+
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/authContext";
 import Header from "../components/header";
+
 import {
     isAdmin,
     hasParentPermission,
@@ -8,7 +10,9 @@ import {
 
 // Parent permission IDs from dbo.auth
 const MARKETING_PERMISSION_ID = 21;
-const PRICING_PERMISSION_ID = 22; // Replace with the actual pricing parent ID.
+const PRICING_PERMISSION_ID = 22;
+const SECURITY_PERMISSION_ID = 33;
+const APPOINTMENTS_PERMISSION_ID = 39;
 
 function Home() {
     const navigate = useNavigate();
@@ -24,6 +28,51 @@ function Home() {
         admin ||
         hasParentPermission(user, PRICING_PERMISSION_ID);
 
+    const canAccessSecurity =
+        admin ||
+        hasParentPermission(user, SECURITY_PERMISSION_ID);
+
+    const canAccessAppointments =
+        admin ||
+        hasParentPermission(user, APPOINTMENTS_PERMISSION_ID);
+
+    const systems = [
+        {
+            title: "إدارة المستخدمين",
+            description: "إضافة المستخدمين وإدارة الصلاحيات.",
+            path: "/users",
+            visible: admin,
+        },
+        {
+            title: "إدارة التسويق",
+            description: "إدارة المندوبين والمنسقين والكروت.",
+            path: "/marketing",
+            visible: canAccessMarketing,
+        },
+        {
+            title: "إدارة التسعير",
+            description: "الدخول إلى نظام التسعير.",
+            path: "/pricing",
+            visible: canAccessPricing,
+        },
+        {
+            title: "إدارة الأمن",
+            description: "إدارة السجلات الأمنية والوقائع والتصاريح.",
+            path: "/security",
+            visible: canAccessSecurity,
+        },
+        {
+            title: "إدارة التعيينات",
+            description: "إدارة التعيينات وبيانات المتقدمين.",
+            path: "/appointments",
+            visible: canAccessAppointments,
+        },
+    ];
+
+    const availableSystems = systems.filter(
+        (system) => system.visible
+    );
+
     return (
         <div className="min-h-screen">
             <div className="sticky top-0 z-50">
@@ -31,7 +80,8 @@ function Home() {
             </div>
 
             <main className="flex min-h-[calc(100vh-80px)] items-center justify-center bg-slate-100 bg-[url('/images/gomla_market_company_cover.jpg')] bg-cover bg-center p-6">
-                <div className="w-full max-w-4xl rounded-2xl bg-white p-8 text-center shadow-xl sm:p-10">
+                <div className="w-full max-w-5xl rounded-2xl bg-white p-8 text-center shadow-xl sm:p-10">
+
                     <h1 className="text-3xl font-bold text-orange-600">
                         مرحباً بك في إدارة جملة ماركت
                     </h1>
@@ -61,62 +111,29 @@ function Home() {
                             </p>
 
                             <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                                {admin && (
+                                {availableSystems.map((system) => (
                                     <button
+                                        key={system.path}
                                         type="button"
-                                        onClick={() => navigate("/users")}
+                                        onClick={() => navigate(system.path)}
                                         className="rounded-xl bg-orange-600 p-6 text-white shadow transition hover:-translate-y-1 hover:bg-orange-700 hover:shadow-lg"
                                     >
                                         <span className="text-xl font-bold">
-                                            إدارة المستخدمين
+                                            {system.title}
                                         </span>
 
                                         <p className="mt-3 text-sm text-orange-50">
-                                            إضافة المستخدمين وإدارة الصلاحيات.
+                                            {system.description}
                                         </p>
                                     </button>
+                                ))}
+
+                                {availableSystems.length === 0 && (
+                                    <p className="col-span-full text-gray-600">
+                                        لا توجد أنظمة متاحة لحسابك حاليًا.
+                                        يرجى التواصل مع مدير النظام.
+                                    </p>
                                 )}
-
-                                {canAccessMarketing && (
-                                    <button
-                                        type="button"
-                                        onClick={() => navigate("/marketing")}
-                                        className="rounded-xl bg-orange-600 p-6 text-white shadow transition hover:-translate-y-1 hover:bg-orange-700 hover:shadow-lg"
-                                    >
-                                        <span className="text-xl font-bold">
-                                            إدارة التسويق
-                                        </span>
-
-                                        <p className="mt-3 text-sm text-orange-50">
-                                            إدارة المندوبين والمنسقين والكروت.
-                                        </p>
-                                    </button>
-                                )}
-
-                                {canAccessPricing && (
-                                    <button
-                                        type="button"
-                                        onClick={() => navigate("/pricing")}
-                                        className="rounded-xl bg-orange-600 p-6 text-white shadow transition hover:-translate-y-1 hover:bg-orange-700 hover:shadow-lg"
-                                    >
-                                        <span className="text-xl font-bold">
-                                            إدارة التسعير
-                                        </span>
-
-                                        <p className="mt-3 text-sm text-orange-50">
-                                            الدخول إلى نظام التسعير.
-                                        </p>
-                                    </button>
-                                )}
-
-                                {!admin &&
-                                    !canAccessMarketing &&
-                                    !canAccessPricing && (
-                                        <p className="col-span-full text-gray-600">
-                                            لا توجد أنظمة متاحة لحسابك حاليًا.
-                                            يرجى التواصل مع مدير النظام.
-                                        </p>
-                                    )}
                             </div>
                         </>
                     )}
