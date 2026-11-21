@@ -763,7 +763,7 @@ export default function RecuritmentManagement() {
               onClick={() => navigate(-1)}
               className="mt-5 rounded-xl bg-slate-800 px-6 py-2.5 font-semibold text-white hover:bg-slate-700"
             >
-              رجوع
+              العودة لنظام التسويق
             </button>
           </div>
         </div>
@@ -807,7 +807,7 @@ export default function RecuritmentManagement() {
               onClick={() => navigate(-1)}
               className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 font-semibold text-slate-700 hover:bg-slate-50"
             >
-              رجوع
+              العودة لنظام التعيينات
             </button>
           </div>
         </section>

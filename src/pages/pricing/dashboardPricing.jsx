@@ -343,7 +343,7 @@ function PoultryDashboard() {
               type="button"
               onClick={() => navigate(-1)}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-green-200 hover:bg-green-50 hover:text-green-700"
-              title="رجوع"
+              title="العودة لنظام التسعير"
             >
               <ArrowRight size={20} />
             </button>

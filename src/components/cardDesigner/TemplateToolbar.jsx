@@ -91,7 +91,7 @@ export default function TemplateToolbar({
                     disabled={busy}
                     className="rounded-lg bg-gray-600 px-5 py-2.5 font-semibold text-white hover:bg-gray-700 disabled:opacity-50"
                 >
-                    رجوع
+                    العودة لنظام التسويق
                 </button>
             </div>
 

@@ -44,7 +44,7 @@ function CardManagement() {
                         className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 font-semibold hover:bg-slate-50"
                     >
                         <ArrowRight size={18} />
-                        رجوع
+                        العودة لنظام التسويق
                     </button>
                 </div>
 

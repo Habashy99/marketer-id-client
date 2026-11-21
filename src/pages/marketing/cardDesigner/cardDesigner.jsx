@@ -1366,7 +1366,7 @@ export default function CardTemplateSettings() {
                   }}
                   className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
                 >
-                  ← رجوع
+                  ← العودة لنظام التسويق
                 </button>
               )}
 
