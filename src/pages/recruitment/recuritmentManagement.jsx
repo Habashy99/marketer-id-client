@@ -1,9 +1,8 @@
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import Header from "../../components/header.jsx";
-import { sendHttpReq } from "../../lib/httpHandler.jsx";
 import { API_BASE_URL } from "../../lib/apiBase.js";
 import { useAuth } from "../../context/authContext.jsx";
 import { hasPermission, isAdmin } from "../../helpers/permissions.jsx";
@@ -13,30 +12,37 @@ import { hasPermission, isAdmin } from "../../helpers/permissions.jsx";
 /* -------------------------------------------------------------------------- */
 
 const PAGE_SIZE = 100;
-const APPLICANTS_PAGE_SIZE = 50;
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
 async function requestData(url, method = "GET", body) {
-  const response = await sendHttpReq(url, method, body);
+  const baseUrl = API_BASE_URL.replace(/\/+$/, "");
 
-  if (response && typeof response.json === "function") {
-    const data = await response.json();
+  const options = {
+    method,
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+    },
+  };
 
-    if (!response.ok) {
-      throw new Error(data?.message || "حدث خطأ أثناء تنفيذ الطلب.");
-    }
-
-    return data;
+  if (body instanceof FormData) {
+    options.body = body;
+  } else if (body !== undefined) {
+    options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(body);
   }
 
-  if (response?.ok === false) {
-    throw new Error(response.message || "حدث خطأ أثناء تنفيذ الطلب.");
+  const response = await fetch(`${baseUrl}/${url.replace(/^\/+/, "")}`, options);
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data?.message || "حدث خطأ أثناء تنفيذ الطلب.");
   }
 
-  return response ?? {};
+  return data;
 }
 
 function formatValue(value) {
@@ -84,6 +90,22 @@ function formatDate(value) {
   return date.toLocaleDateString("en-GB");
 }
 
+function formatDateTime(value) {
+  if (!value) return "-";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleString("en-GB");
+}
+
+function getArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 /* -------------------------------------------------------------------------- */
 /* Component                                                                  */
 /* -------------------------------------------------------------------------- */
@@ -92,8 +114,7 @@ export default function RecuritmentManagement() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const admin = isAdmin(user);
-  const canView = admin || hasPermission(user, 39);
+  const canView = isAdmin(user) || hasPermission(user, 39);
 
   /* ---------------------------------------------------------------------- */
   /* Excel States                                                           */
@@ -109,23 +130,6 @@ export default function RecuritmentManagement() {
 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-
-  /* ---------------------------------------------------------------------- */
-  /* Saved Applicants                                                       */
-  /* ---------------------------------------------------------------------- */
-
-  const [applicants, setApplicants] = useState([]);
-  const [applicantsLoading, setApplicantsLoading] = useState(false);
-  const [applicantsError, setApplicantsError] = useState("");
-
-  const [applicantsPage, setApplicantsPage] = useState(1);
-
-  const [applicantsPagination, setApplicantsPagination] = useState({
-    page: 1,
-    limit: APPLICANTS_PAGE_SIZE,
-    total: 0,
-    totalPages: 1,
-  });
 
   /* ---------------------------------------------------------------------- */
   /* Excel Search & Pagination                                               */
@@ -163,6 +167,7 @@ export default function RecuritmentManagement() {
   const currentResults = filteredResults.slice(startIndex, endIndex);
 
   const pageNumbers = [];
+
   const firstPage = Math.max(1, safeCurrentPage - 2);
   const lastPage = Math.min(totalPages, safeCurrentPage + 2);
 
@@ -171,475 +176,55 @@ export default function RecuritmentManagement() {
   }
 
   /* ---------------------------------------------------------------------- */
-  /* Add Applicant Modal                                                     */
+  /* National ID Security Search                                             */
   /* ---------------------------------------------------------------------- */
 
-  const [showApplicantModal, setShowApplicantModal] = useState(false);
-  const [applicantLoading, setApplicantLoading] = useState(false);
-  const [securityChecking, setSecurityChecking] = useState(false);
+  const [nationalId, setNationalId] = useState("");
+  const [securityLoading, setSecurityLoading] = useState(false);
+  const [securityError, setSecurityError] = useState("");
+  const [securityResult, setSecurityResult] = useState(null);
 
-  const [applicantForm, setApplicantForm] = useState({
-    name: "",
-    nationalId: "",
-    mobile: "",
-    applicationDate: "",
-  });
+  const handleNationalIdChange = (value) => {
+    const normalized = normalizeDigits(value).replace(/\D/g, "").slice(0, 14);
 
-  const [securityCheck, setSecurityCheck] = useState({
-    checkedNationalId: "",
-    exists: false,
-    blocked: false,
-    message: "",
-    notes: "",
-  });
+    setNationalId(normalized);
+    setSecurityError("");
+    setSecurityResult(null);
+  };
 
-  const [applicantError, setApplicantError] = useState("");
-  const [applicantSuccess, setApplicantSuccess] = useState("");
+  const handleSecuritySearch = async (event) => {
+    event.preventDefault();
 
-  /* ---------------------------------------------------------------------- */
-  /* Edit Applicant Modal                                                    */
-  /* ---------------------------------------------------------------------- */
+    const normalized = normalizeDigits(nationalId).trim();
 
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editingApplicant, setEditingApplicant] = useState(null);
-  const [editLoading, setEditLoading] = useState(false);
+    if (!/^\d{14}$/.test(normalized)) {
+      setSecurityError("الرقم القومي يجب أن يتكون من 14 رقمًا بالضبط.");
+      setSecurityResult(null);
+      return;
+    }
 
-  // التعديل مسموح للاسم ورقم التليفون فقط.
-  // الرقم القومي للعرض فقط ولا يتم إرساله في طلب التعديل.
-  const [editForm, setEditForm] = useState({
-    name: "",
-    mobile: "",
-  });
-
-  const [editError, setEditError] = useState("");
-  const [editSuccess, setEditSuccess] = useState("");
-
-  /* ---------------------------------------------------------------------- */
-  /* Delete Applicant                                                        */
-  /* ---------------------------------------------------------------------- */
-
-  const [deletingApplicantId, setDeletingApplicantId] = useState(null);
-
-  /* ---------------------------------------------------------------------- */
-  /* Load Applicants                                                         */
-  /* ---------------------------------------------------------------------- */
-
-  const loadApplicants = async (page = 1) => {
-    setApplicantsLoading(true);
-    setApplicantsError("");
+    setSecurityLoading(true);
+    setSecurityError("");
+    setSecurityResult(null);
 
     try {
       const data = await requestData(
-        `recuritment/applicants?page=${page}&limit=${APPLICANTS_PAGE_SIZE}`,
+        `recuritment/check-national-id/${encodeURIComponent(normalized)}`,
       );
 
-      setApplicants(Array.isArray(data.data) ? data.data : []);
-
-      setApplicantsPagination(
-        data.pagination || {
-          page,
-          limit: APPLICANTS_PAGE_SIZE,
-          total: Array.isArray(data.data) ? data.data.length : 0,
-          totalPages: 1,
-        },
-      );
-
-      setApplicantsPage(page);
+      setSecurityResult(data);
     } catch (err) {
-      console.error("Load recruitment applicants error:", err);
-      setApplicantsError(err.message || "تعذر تحميل المتقدمين المحفوظين.");
+      console.error("Security national ID search error:", err);
+      setSecurityError(err.message || "تعذر البحث في سجلات الأمن.");
     } finally {
-      setApplicantsLoading(false);
+      setSecurityLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (canView) {
-      loadApplicants(1);
-    }
-  }, [canView]);
-
-  /* ---------------------------------------------------------------------- */
-  /* Add Applicant Helpers                                                   */
-  /* ---------------------------------------------------------------------- */
-
-  const resetApplicantForm = () => {
-    setApplicantForm({
-      name: "",
-      nationalId: "",
-      mobile: "",
-      applicationDate: "",
-    });
-
-    setSecurityCheck({
-      checkedNationalId: "",
-      exists: false,
-      blocked: false,
-      message: "",
-      notes: "",
-    });
-
-    setApplicantError("");
-    setApplicantSuccess("");
-    setSecurityChecking(false);
-  };
-
-  const closeApplicantModal = () => {
-    if (applicantLoading || securityChecking) return;
-
-    setShowApplicantModal(false);
-    resetApplicantForm();
-  };
-
-  const openApplicantModal = () => {
-    resetApplicantForm();
-    setShowApplicantModal(true);
-  };
-
-  const updateApplicantField = (field, value) => {
-    setApplicantForm((previous) => ({
-      ...previous,
-      [field]: value,
-    }));
-
-    setApplicantError("");
-    setApplicantSuccess("");
-
-    if (field === "nationalId") {
-      setSecurityCheck({
-        checkedNationalId: "",
-        exists: false,
-        blocked: false,
-        message: "",
-        notes: "",
-      });
-    }
-  };
-
-  /* ---------------------------------------------------------------------- */
-  /* Security Check                                                         */
-  /* ---------------------------------------------------------------------- */
-
-  const checkApplicantSecurity = async (value, force = false) => {
-    const nationalId = normalizeDigits(value).trim();
-
-    if (!/^\d{14}$/.test(nationalId)) {
-      setSecurityCheck({
-        checkedNationalId: "",
-        exists: false,
-        blocked: false,
-        message: "",
-        notes: "",
-      });
-
-      if (nationalId.length > 0) {
-        setApplicantError("الرقم القومي يجب أن يتكون من 14 رقمًا بالضبط.");
-      }
-
-      return false;
-    }
-
-    if (!force && securityCheck.checkedNationalId === nationalId) {
-      return !securityCheck.exists;
-    }
-
-    setSecurityChecking(true);
-    setApplicantError("");
-    setApplicantSuccess("");
-
-    try {
-      const baseUrl = API_BASE_URL.replace(/\/+$/, "");
-
-      const response = await fetch(
-        `${baseUrl}/security/check-national-id/${encodeURIComponent(nationalId)}`,
-        {
-          method: "GET",
-          credentials: "include",
-          headers: {
-            Accept: "application/json",
-          },
-        },
-      );
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(data?.message || "تعذر التحقق من الرقم القومي.");
-      }
-
-      const exists = Boolean(data.exists);
-
-      setSecurityCheck({
-        checkedNationalId: nationalId,
-        exists,
-        blocked: Boolean(data.blocked),
-        message: data.message || "",
-        notes: data.notes || "",
-      });
-
-      if (exists) {
-        setApplicantError(
-          "هذا المتقدم موجود في جدول الأمن، لذلك تم رفض إضافته.",
-        );
-
-        return false;
-      }
-
-      setApplicantSuccess(
-        "الرقم القومي غير موجود في جدول الأمن، ويمكن استكمال البيانات.",
-      );
-
-      return true;
-    } catch (err) {
-      console.error("Applicant security check error:", err);
-
-      setSecurityCheck({
-        checkedNationalId: "",
-        exists: false,
-        blocked: false,
-        message: "",
-        notes: "",
-      });
-
-      setApplicantError(
-        err.message || "حدث خطأ أثناء التحقق من الرقم القومي.",
-      );
-
-      return false;
-    } finally {
-      setSecurityChecking(false);
-    }
-  };
-
-  /* ---------------------------------------------------------------------- */
-  /* Save New Applicant                                                      */
-  /* ---------------------------------------------------------------------- */
-
-  const handleApplicantSubmit = async (event) => {
-    event.preventDefault();
-
-    setApplicantError("");
-    setApplicantSuccess("");
-
-    const name = applicantForm.name.trim();
-    const nationalId = normalizeDigits(applicantForm.nationalId).trim();
-    const mobile = normalizeDigits(applicantForm.mobile).trim();
-    const applicationDate = applicantForm.applicationDate;
-
-    if (!name) {
-      setApplicantError("من فضلك أدخل اسم المتقدم.");
-      return;
-    }
-
-    if (!/^\d{14}$/.test(nationalId)) {
-      setApplicantError("الرقم القومي يجب أن يتكون من 14 رقمًا بالضبط.");
-      return;
-    }
-
-    if (!mobile) {
-      setApplicantError("من فضلك أدخل رقم التليفون.");
-      return;
-    }
-
-    if (mobile.length > 20) {
-      setApplicantError("رقم التليفون يجب ألا يزيد عن 20 حرفًا.");
-      return;
-    }
-
-    if (!applicationDate) {
-      setApplicantError("من فضلك اختر تاريخ التقديم.");
-      return;
-    }
-
-    setApplicantLoading(true);
-
-    try {
-      const isSecurityClear = await checkApplicantSecurity(nationalId, true);
-
-      if (!isSecurityClear) return;
-
-      const applicantData = {
-        name,
-        nationalId,
-        mobile,
-        applicationDate,
-        decision: "مقبول",
-        reason: "لا يوجد سجل له في سجلات الأمن",
-      };
-
-      const saved = await requestData(
-        "recuritment/applicants",
-        "POST",
-        applicantData,
-      );
-
-      setApplicantSuccess(
-        saved.message || "تم حفظ المتقدم بنجاح، وتم تسجيله مقبولًا.",
-      );
-
-      await loadApplicants(1);
-
-      setTimeout(() => {
-        setShowApplicantModal(false);
-        resetApplicantForm();
-      }, 700);
-    } catch (err) {
-      console.error("Save applicant error:", err);
-      setApplicantError(err.message || "حدث خطأ أثناء حفظ بيانات المتقدم.");
-    } finally {
-      setApplicantLoading(false);
-    }
-  };
-
-  /* ---------------------------------------------------------------------- */
-  /* Open Edit Modal                                                         */
-  /* ---------------------------------------------------------------------- */
-
-  const openEditModal = (applicant) => {
-    setEditingApplicant(applicant);
-
-    setEditForm({
-      name: applicant.name || "",
-      mobile: normalizeDigits(applicant.mobile ?? ""),
-    });
-
-    setEditError("");
-    setEditSuccess("");
-    setShowEditModal(true);
-  };
-
-  const closeEditModal = () => {
-    if (editLoading) return;
-
-    setShowEditModal(false);
-    setEditingApplicant(null);
-
-    setEditForm({
-      name: "",
-      mobile: "",
-    });
-
-    setEditError("");
-    setEditSuccess("");
-  };
-
-  const updateEditField = (field, value) => {
-    setEditForm((previous) => ({
-      ...previous,
-      [field]: value,
-    }));
-
-    setEditError("");
-    setEditSuccess("");
-  };
-
-  /* ---------------------------------------------------------------------- */
-  /* Update Applicant                                                        */
-  /* ---------------------------------------------------------------------- */
-
-  const handleEditSubmit = async (event) => {
-    event.preventDefault();
-
-    if (!editingApplicant?.id) {
-      setEditError("تعذر تحديد المتقدم المراد تعديله.");
-      return;
-    }
-
-    setEditError("");
-    setEditSuccess("");
-
-    const name = editForm.name.trim();
-    const mobile = normalizeDigits(editForm.mobile).trim();
-
-    if (!name) {
-      setEditError("اسم المتقدم مطلوب.");
-      return;
-    }
-
-    if (!mobile) {
-      setEditError("رقم التليفون مطلوب.");
-      return;
-    }
-
-    if (mobile.length > 20) {
-      setEditError("رقم التليفون يجب ألا يزيد عن 20 حرفًا.");
-      return;
-    }
-
-    setEditLoading(true);
-
-    try {
-      // نرسل الاسم ورقم التليفون فقط.
-      // الرقم القومي وباقي البيانات لا يتم تعديلها.
-      const updated = await requestData(
-        `recuritment/applicants/${editingApplicant.id}`,
-        "PUT",
-        {
-          name,
-          mobile,
-        },
-      );
-
-      await loadApplicants(applicantsPage);
-
-      setEditSuccess(
-        updated.message || "تم تعديل الاسم ورقم التليفون بنجاح.",
-      );
-
-      setTimeout(() => {
-        setShowEditModal(false);
-        setEditingApplicant(null);
-
-        setEditForm({
-          name: "",
-          mobile: "",
-        });
-      }, 700);
-    } catch (err) {
-      console.error("Update applicant error:", err);
-      setEditError(err.message || "حدث خطأ أثناء تعديل بيانات المتقدم.");
-    } finally {
-      setEditLoading(false);
-    }
-  };
-
-  /* ---------------------------------------------------------------------- */
-  /* Delete Applicant                                                        */
-  /* ---------------------------------------------------------------------- */
-
-  const handleDeleteApplicant = async (applicant) => {
-    if (!applicant?.id) return;
-
-    const confirmed = window.confirm(
-      `هل أنت متأكد من حذف المتقدم "${applicant.name}"؟\n\nسيتم إخفاؤه من قائمة المتقدمين المسجلين.`,
-    );
-
-    if (!confirmed) return;
-
-    setDeletingApplicantId(applicant.id);
-    setApplicantsError("");
-
-    try {
-      const deleted = await requestData(
-        `recuritment/applicants/${applicant.id}`,
-        "DELETE",
-      );
-
-      const nextPage =
-        applicants.length === 1 && applicantsPage > 1
-          ? applicantsPage - 1
-          : applicantsPage;
-
-      await loadApplicants(nextPage);
-
-      setMessage(deleted.message || "تم حذف المتقدم بنجاح.");
-      setError("");
-    } catch (err) {
-      console.error("Delete applicant error:", err);
-      setApplicantsError(err.message || "حدث خطأ أثناء حذف المتقدم.");
-    } finally {
-      setDeletingApplicantId(null);
-    }
+  const resetSecuritySearch = () => {
+    setNationalId("");
+    setSecurityResult(null);
+    setSecurityError("");
   };
 
   /* ---------------------------------------------------------------------- */
@@ -667,7 +252,11 @@ export default function RecuritmentManagement() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const data = await requestData("recuritment/check", "POST", formData);
+      const data = await requestData(
+        "recuritment/check",
+        "POST",
+        formData,
+      );
 
       setResults(Array.isArray(data.results) ? data.results : []);
       setSummary(data.summary || null);
@@ -698,7 +287,7 @@ export default function RecuritmentManagement() {
       setError("");
 
       const response = await fetch(
-        `${API_BASE_URL.replace(/\/+$/, "")}/recuritment/download/${jobId}`,
+        `${API_BASE_URL.replace(/\/+$/, "")}/recuritment/download/${encodeURIComponent(jobId)}`,
         {
           method: "GET",
           credentials: "include",
@@ -780,6 +369,7 @@ export default function RecuritmentManagement() {
       <Header />
 
       <main className="mx-auto max-w-[1600px] space-y-6 p-4 md:p-6">
+
         {/* Page Header */}
 
         <section className="flex flex-wrap items-center justify-between gap-4">
@@ -789,247 +379,103 @@ export default function RecuritmentManagement() {
             </h1>
 
             <p className="mt-2 text-sm text-slate-500">
-              رفع ملفات المتقدمين ومراجعة موقفهم الأمني قبل التعيين
+              فحص ملفات التعيينات والتحقق من الموقف الأمني للمتقدمين
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={openApplicantModal}
-              className="rounded-xl bg-indigo-700 px-5 py-2.5 font-bold text-white shadow-sm transition hover:bg-indigo-800"
-            >
-              + إضافة متقدم
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate(-1)}
-              className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              العودة لنظام التعيينات
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            العودة لنظام التعيينات
+          </button>
         </section>
 
-        {/* Saved Applicants Table */}
+        {/* ================================================================ */}
+        {/* National ID Security Search                                      */}
+        {/* ================================================================ */}
 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                المتقدمون المسجلون
-              </h2>
 
-              <p className="mt-1 text-sm text-slate-500">
-                إجمالي المتقدمين المحفوظين:{" "}
-                {applicantsPagination.total ?? applicants.length}
-              </p>
-            </div>
+          <div className="border-b border-slate-200 bg-slate-800 p-5 text-white">
+            <h2 className="text-lg font-bold">
+              البحث في سجلات الأمن
+            </h2>
 
-            <button
-              type="button"
-              onClick={() => loadApplicants(applicantsPage)}
-              disabled={applicantsLoading}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+            <p className="mt-1 text-sm text-slate-300">
+              أدخل الرقم القومي لمعرفة ما إذا كان للشخص سجل أمني والاطلاع على تفاصيله
+            </p>
+          </div>
+
+          <div className="space-y-5 p-5">
+
+            <form
+              onSubmit={handleSecuritySearch}
+              className="flex flex-col gap-3 md:flex-row md:items-end"
             >
-              {applicantsLoading ? "جاري التحديث..." : "تحديث الجدول"}
-            </button>
-          </div>
+              <div className="flex-1">
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  الرقم القومي
+                </label>
 
-          {applicantsError && (
-            <div className="m-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
-              {applicantsError}
-            </div>
-          )}
-
-          <div className="max-h-130 overflow-auto">
-            <table className="min-w-full border-collapse text-sm">
-              <thead className="sticky top-0 z-10 bg-slate-800 text-white">
-                <tr>
-                  <th className="whitespace-nowrap border-l border-slate-600 px-4 py-3 text-center">
-                    م
-                  </th>
-                  <th className="whitespace-nowrap border-l border-slate-600 px-4 py-3 text-center">
-                    الاسم
-                  </th>
-                  <th className="whitespace-nowrap border-l border-slate-600 px-4 py-3 text-center">
-                    الرقم القومي
-                  </th>
-                  <th className="whitespace-nowrap border-l border-slate-600 px-4 py-3 text-center">
-                    رقم التليفون
-                  </th>
-                  <th className="whitespace-nowrap border-l border-slate-600 px-4 py-3 text-center">
-                    تاريخ التقديم
-                  </th>
-                  <th className="whitespace-nowrap border-l border-slate-600 px-4 py-3 text-center">
-                    قرار التعيين
-                  </th>
-                  <th className="min-w-64 border-l border-slate-600 px-4 py-3 text-center">
-                    سبب القرار
-                  </th>
-                  <th className="whitespace-nowrap border-l border-slate-600 px-4 py-3 text-center">
-                    تاريخ التسجيل
-                  </th>
-                  <th className="whitespace-nowrap px-4 py-3 text-center">
-                    الإجراءات
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {applicants.map((applicant, index) => (
-                  <tr
-                    key={applicant.id}
-                    className="border-b border-slate-100 transition hover:bg-slate-50"
-                  >
-                    <td className="whitespace-nowrap px-4 py-3 text-center font-semibold text-slate-500">
-                      {(applicantsPage - 1) *
-                        (applicantsPagination.limit || APPLICANTS_PAGE_SIZE) +
-                        index +
-                        1}
-                    </td>
-
-                    <td className="min-w-56 px-4 py-3 text-center font-semibold text-slate-800">
-                      {formatValue(applicant.name)}
-                    </td>
-
-                    <td className="whitespace-nowrap px-4 py-3 text-center font-mono">
-                      {formatValue(
-                        applicant.nationalId ?? applicant.national_id,
-                      )}
-                    </td>
-
-                    <td className="whitespace-nowrap px-4 py-3 text-center">
-                      {formatValue(applicant.mobile)}
-                    </td>
-
-                    <td className="whitespace-nowrap px-4 py-3 text-center">
-                      {formatDate(
-                        applicant.applicationDate ??
-                          applicant.application_date,
-                      )}
-                    </td>
-
-                    <td className="whitespace-nowrap px-4 py-3 text-center">
-                      <DecisionBadge decision={applicant.decision} />
-                    </td>
-
-                    <td className="min-w-64 max-w-96 px-4 py-3 text-center leading-6 text-slate-600">
-                      <span className="line-clamp-3">
-                        {formatValue(applicant.reason)}
-                      </span>
-                    </td>
-
-                    <td className="whitespace-nowrap px-4 py-3 text-center text-slate-500">
-                      {formatDate(
-                        applicant.createdAt ?? applicant.created_at,
-                      )}
-                    </td>
-
-                    <td className="whitespace-nowrap px-4 py-3 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(applicant)}
-                          disabled={deletingApplicantId === applicant.id}
-                          title="تعديل الاسم ورقم التليفون"
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
-                        >
-                          <span>✏️</span>
-                          تعديل
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteApplicant(applicant)}
-                          disabled={
-                            deletingApplicantId === applicant.id ||
-                            applicantsLoading
-                          }
-                          title="حذف المتقدم"
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
-                        >
-                          <span>🗑️</span>
-                          {deletingApplicantId === applicant.id
-                            ? "جاري الحذف..."
-                            : "حذف"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-
-                {!applicantsLoading && applicants.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={9}
-                      className="px-4 py-10 text-center text-slate-500"
-                    >
-                      لا يوجد متقدمون مسجلون حتى الآن.
-                    </td>
-                  </tr>
-                )}
-
-                {applicantsLoading && applicants.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={9}
-                      className="px-4 py-10 text-center text-slate-500"
-                    >
-                      جاري تحميل المتقدمين...
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Applicants Pagination */}
-
-          {(applicantsPagination.totalPages || 1) > 1 && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm text-slate-600">
-                صفحة {applicantsPage} من {applicantsPagination.totalPages}
-              </p>
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => loadApplicants(applicantsPage - 1)}
-                  disabled={applicantsPage <= 1 || applicantsLoading}
-                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-40"
-                >
-                  السابق
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => loadApplicants(applicantsPage + 1)}
-                  disabled={
-                    applicantsPage >= applicantsPagination.totalPages ||
-                    applicantsLoading
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={14}
+                  value={nationalId}
+                  onChange={(event) =>
+                    handleNationalIdChange(event.target.value)
                   }
-                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-40"
-                >
-                  التالي
-                </button>
+                  placeholder="أدخل الرقم القومي المكون من 14 رقمًا"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-center font-mono text-lg tracking-widest outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                />
               </div>
-            </div>
-          )}
+
+              <button
+                type="submit"
+                disabled={securityLoading}
+                className="min-w-40 rounded-xl bg-indigo-700 px-6 py-3 font-bold text-white transition hover:bg-indigo-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                {securityLoading ? "جاري البحث..." : "بحث"}
+              </button>
+
+              <button
+                type="button"
+                onClick={resetSecuritySearch}
+                disabled={securityLoading}
+                className="rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                مسح
+              </button>
+            </form>
+
+            {securityError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                {securityError}
+              </div>
+            )}
+
+            {securityResult && (
+              <SecuritySearchResult data={securityResult} />
+            )}
+
+          </div>
         </section>
 
-        {/* Upload Excel */}
+        {/* ================================================================ */}
+        {/* Excel Upload                                                      */}
+        {/* ================================================================ */}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+
           <div className="mb-5">
             <h2 className="text-lg font-bold text-slate-900">
-              رفع ملف المتقدمين
+              رفع وفحص ملف Excel
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              اختر ملف Excel يحتوي على الأعمدة: الاسم، الرقم القومي، تاريخ،
-              حالة.
+              يتم فحص الأرقام القومية الموجودة في الملف ومقارنتها بسجلات الأمن.
             </p>
           </div>
 
@@ -1071,8 +517,7 @@ export default function RecuritmentManagement() {
 
           <div className="mt-4 rounded-xl bg-blue-50 p-4 text-sm leading-7 text-blue-800">
             <strong>ملاحظة:</strong> يتم رفع الملف مرة واحدة فقط. بعد انتهاء
-            الفحص ستظهر جميع البيانات هنا، ويمكنك تنزيل ملف Excel الناتج دون
-            إعادة رفع الملف.
+            الفحص ستظهر النتائج هنا، ويمكنك تنزيل ملف Excel الناتج دون إعادة رفع الملف.
           </div>
         </section>
 
@@ -1120,10 +565,13 @@ export default function RecuritmentManagement() {
           </section>
         )}
 
-        {/* Excel Results */}
+        {/* ================================================================ */}
+        {/* Excel Results                                                     */}
+        {/* ================================================================ */}
 
         {results.length > 0 && (
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5">
               <div>
                 <h2 className="text-lg font-bold text-slate-900">
@@ -1321,357 +769,347 @@ export default function RecuritmentManagement() {
             </p>
           </section>
         )}
+
       </main>
+    </div>
+  );
+}
 
-      {/* ============================================================== */}
-      {/* Add Applicant Modal                                             */}
-      {/* ============================================================== */}
+/* -------------------------------------------------------------------------- */
+/* Security Search Result                                                     */
+/* -------------------------------------------------------------------------- */
 
-      {showApplicantModal && (
-        <div
-          className="fixed inset-0 z-100 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-sm"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              closeApplicantModal();
-            }
-          }}
-        >
-          <div className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-800 px-6 py-5 text-white">
-              <div>
-                <h2 className="text-xl font-extrabold">إضافة متقدم جديد</h2>
+function SecuritySearchResult({ data }) {
+  const records = getArray(data.records);
 
-                <p className="mt-1 text-sm text-slate-300">
-                  أدخل بيانات المتقدم للتحقق من موقفه الأمني
-                </p>
-              </div>
+  if (!data.exists || records.length === 0) {
+    return (
+      <div className="rounded-2xl border border-green-200 bg-green-50 p-6">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-green-100 text-xl text-green-700">
+            ✓
+          </span>
 
-              <button
-                type="button"
-                onClick={closeApplicantModal}
-                disabled={applicantLoading || securityChecking}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white transition hover:bg-white/10 disabled:opacity-50"
-                aria-label="إغلاق"
-              >
-                ×
-              </button>
+          <div>
+            <h3 className="font-extrabold text-green-800">
+              لا يوجد سجل أمني
+            </h3>
+
+            <p className="mt-1 text-sm text-green-700">
+              الرقم القومي غير موجود ضمن سجلات الأمن.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 p-5">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-xl text-red-700">
+            !
+          </span>
+
+          <div>
+            <h3 className="font-extrabold text-red-800">
+              يوجد سجل في سجلات الأمن
+            </h3>
+
+            <p className="mt-1 text-sm text-red-700">
+              تم العثور على {records.length} سجل مرتبط بالرقم القومي.
+            </p>
+          </div>
+        </div>
+
+        <span className="rounded-full bg-red-100 px-4 py-2 text-sm font-bold text-red-800">
+          يتطلب مراجعة أمنية
+        </span>
+      </div>
+
+      {records.map((person, index) => (
+        <SecurityPersonCard
+          key={person.id ?? index}
+          person={person}
+          index={index}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Security Person Card                                                        */
+/* -------------------------------------------------------------------------- */
+
+function SecurityPersonCard({ person, index }) {
+  const incidents = getArray(person.incidents);
+  const statusHistory = getArray(person.statusHistory);
+  const permits = getArray(person.permits);
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 p-5">
+        <div>
+          <p className="text-xs font-semibold text-slate-500">
+            سجل أمني رقم {index + 1}
+          </p>
+
+          <h3 className="mt-1 text-lg font-extrabold text-slate-900">
+            {formatValue(person.name)}
+          </h3>
+        </div>
+
+        <span className="rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-700">
+          {formatValue(person.security_situation)}
+        </span>
+      </div>
+
+      <div className="space-y-6 p-5">
+
+        {/* Basic Information */}
+
+        <div>
+          <SectionTitle title="البيانات الأساسية" />
+
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <InfoItem label="الاسم" value={person.name} />
+            <InfoItem label="الرقم القومي" value={person.national_id_number} />
+            <InfoItem label="الوظيفة" value={person.job} />
+            <InfoItem label="تاريخ الميلاد" value={formatDate(person.birth_date)} />
+            <InfoItem label="محل الميلاد" value={person.birth_place} />
+            <InfoItem label="نوع الملف" value={person.file_type} />
+            <InfoItem label="الشركة" value={person.company_display_name || person.company_name || person.advertising_company_name} />
+            <InfoItem label="الفرع" value={person.branch_name || person.branch} />
+            <InfoItem label="المحافظة" value={person.governorate} />
+            <InfoItem label="تاريخ تسجيل السجل" value={formatDateTime(person.created_at)} />
+            <InfoItem label="آخر تحديث" value={formatDateTime(person.updated_at)} />
+          </div>
+
+          {person.notes && (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-xs font-bold text-amber-800">
+                ملاحظات السجل
+              </p>
+
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-amber-900">
+                {person.notes}
+              </p>
             </div>
+          )}
+        </div>
 
-            <form onSubmit={handleApplicantSubmit} className="space-y-5 p-6">
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                {/* Name */}
+        {/* Incidents */}
 
-                <div className="md:col-span-2">
-                  <label className="mb-2 block text-sm font-bold text-slate-700">
-                    اسم المتقدم
-                    <span className="mr-1 text-red-500">*</span>
-                  </label>
+        <div>
+          <SectionTitle
+            title="الوقائع والمخالفات"
+            count={incidents.length}
+          />
 
-                  <input
-                    type="text"
-                    value={applicantForm.name}
-                    onChange={(event) =>
-                      updateApplicantField("name", event.target.value)
-                    }
-                    maxLength={200}
-                    required
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
-                  />
-                </div>
+          {incidents.length === 0 ? (
+            <EmptySection text="لا توجد وقائع مسجلة لهذا الشخص." />
+          ) : (
+            <div className="mt-3 space-y-3">
+              {incidents.map((incident, incidentIndex) => (
+                <div
+                  key={incident.id ?? incidentIndex}
+                  className="rounded-xl border border-red-200 bg-red-50/60 p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="font-bold text-red-800">
+                      واقعة رقم {incidentIndex + 1}
+                    </h4>
 
-                {/* National ID */}
+                    <span className="text-xs font-semibold text-slate-500">
+                      {formatDate(incident.incident_date)}
+                    </span>
+                  </div>
 
-                <div className="md:col-span-2">
-                  <label className="mb-2 block text-sm font-bold text-slate-700">
-                    الرقم القومي
-                    <span className="mr-1 text-red-500">*</span>
-                  </label>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <InfoItem
+                      label="الفرع"
+                      value={incident.branch}
+                    />
 
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={14}
-                    value={applicantForm.nationalId}
-                    onChange={(event) =>
-                      updateApplicantField(
-                        "nationalId",
-                        normalizeDigits(event.target.value)
-                          .replace(/\D/g, "")
-                          .slice(0, 14),
-                      )
-                    }
-                    onBlur={() => {
-                      if (applicantForm.nationalId.length === 14) {
-                        checkApplicantSecurity(applicantForm.nationalId);
+                    <InfoItem
+                      label="قيمة المسروقات"
+                      value={
+                        incident.stolen_goods_value != null
+                          ? `${incident.stolen_goods_value} جنيه`
+                          : "-"
                       }
-                    }}
-                    required
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-center font-mono text-base tracking-wider outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
-                  />
+                    />
+                  </div>
 
-                  <p className="mt-1 text-xs text-slate-500">
-                    يجب إدخال 14 رقمًا.
-                  </p>
+                  <div className="mt-3">
+                    <InfoItem
+                      label="المسروقات"
+                      value={incident.stolen_goods}
+                    />
+                  </div>
 
-                  {securityChecking && (
-                    <p className="mt-2 text-sm font-semibold text-blue-700">
-                      جاري التحقق من الرقم القومي...
+                  {incident.notes && (
+                    <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                      {incident.notes}
                     </p>
                   )}
                 </div>
-
-                {/* Mobile */}
-
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-slate-700">
-                    رقم التليفون
-                    <span className="mr-1 text-red-500">*</span>
-                  </label>
-
-                  <input
-                    type="tel"
-                    inputMode="tel"
-                    maxLength={20}
-                    value={applicantForm.mobile}
-                    onChange={(event) =>
-                      updateApplicantField(
-                        "mobile",
-                        normalizeDigits(event.target.value).slice(0, 20),
-                      )
-                    }
-                    required
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
-                  />
-                </div>
-
-                {/* Application Date */}
-
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-slate-700">
-                    تاريخ التقديم
-                    <span className="mr-1 text-red-500">*</span>
-                  </label>
-
-                  <input
-                    type="date"
-                    value={applicantForm.applicationDate}
-                    onChange={(event) =>
-                      updateApplicantField(
-                        "applicationDate",
-                        event.target.value,
-                      )
-                    }
-                    required
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
-                  />
-                </div>
-              </div>
-
-              {applicantError && (
-                <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-700">
-                  <span className="text-lg">!</span>
-                  <p>{applicantError}</p>
-                </div>
-              )}
-
-              {applicantSuccess && !applicantError && (
-                <div className="flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 p-4 text-sm font-semibold leading-6 text-green-700">
-                  <span className="text-lg">✓</span>
-                  <p>{applicantSuccess}</p>
-                </div>
-              )}
-
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-800">
-                <p className="font-bold">ملاحظة</p>
-
-                <p className="mt-1">
-                  يتم التحقق من الرقم القومي في قاعدة بيانات الأمن. إذا لم يكن
-                  له سجل في الأمن، سيتم حفظ المتقدم بقرار «مقبول» وسبب «لا يوجد
-                  سجل له في سجلات الأمن».
-                </p>
-              </div>
-
-              <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={closeApplicantModal}
-                  disabled={applicantLoading || securityChecking}
-                  className="rounded-xl border border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                >
-                  إغلاق
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={
-                    applicantLoading ||
-                    securityChecking ||
-                    securityCheck.exists
-                  }
-                  className="rounded-xl bg-indigo-700 px-7 py-3 text-sm font-bold text-white transition hover:bg-indigo-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                >
-                  {applicantLoading ? "جاري الحفظ..." : "حفظ المتقدم"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* Edit Applicant Modal                                            */}
-      {/* ============================================================== */}
-
-      {showEditModal && (
-        <div
-          className="fixed inset-0 z-110 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-sm"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              closeEditModal();
-            }
-          }}
-        >
-          <div className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-            {/* Edit Header */}
-
-            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-800 px-6 py-5 text-white">
-              <div>
-                <h2 className="text-xl font-extrabold">
-                  تعديل بيانات المتقدم
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-300">
-                  يمكنك تعديل الاسم ورقم التليفون فقط
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={closeEditModal}
-                disabled={editLoading}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white transition hover:bg-white/10 disabled:opacity-50"
-                aria-label="إغلاق"
-              >
-                ×
-              </button>
+              ))}
             </div>
-
-            {/* Edit Form */}
-
-            <form onSubmit={handleEditSubmit} className="space-y-5 p-6">
-              <div className="grid grid-cols-1 gap-5">
-                {/* Name */}
-
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-slate-700">
-                    اسم المتقدم
-                    <span className="mr-1 text-red-500">*</span>
-                  </label>
-
-                  <input
-                    type="text"
-                    value={editForm.name}
-                    onChange={(event) =>
-                      updateEditField("name", event.target.value)
-                    }
-                    maxLength={200}
-                    required
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
-                  />
-                </div>
-
-                {/* National ID - Read Only */}
-
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-slate-700">
-                    الرقم القومي
-                  </label>
-
-                  <input
-                    type="text"
-                    value={formatValue(
-                      editingApplicant?.nationalId ??
-                        editingApplicant?.national_id,
-                    )}
-                    readOnly
-                    disabled
-                    className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-center font-mono text-base tracking-wider text-slate-500"
-                  />
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    الرقم القومي ثابت ولا يمكن تعديله.
-                  </p>
-                </div>
-
-                {/* Mobile */}
-
-                <div>
-                  <label className="mb-2 block text-sm font-bold text-slate-700">
-                    رقم التليفون
-                    <span className="mr-1 text-red-500">*</span>
-                  </label>
-
-                  <input
-                    type="tel"
-                    inputMode="tel"
-                    maxLength={20}
-                    value={editForm.mobile}
-                    onChange={(event) =>
-                      updateEditField(
-                        "mobile",
-                        normalizeDigits(event.target.value).slice(0, 20),
-                      )
-                    }
-                    required
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
-                  />
-                </div>
-              </div>
-
-              {editError && (
-                <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-700">
-                  <span className="text-lg">!</span>
-                  <p>{editError}</p>
-                </div>
-              )}
-
-              {editSuccess && (
-                <div className="flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 p-4 text-sm font-semibold leading-6 text-green-700">
-                  <span className="text-lg">✓</span>
-                  <p>{editSuccess}</p>
-                </div>
-              )}
-
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-800">
-                يتم تعديل الاسم ورقم التليفون فقط. لن يتم تغيير الرقم القومي
-                أو تاريخ التقديم أو قرار التعيين أو سبب القرار. يتم تسجيل
-                الموظف الذي قام بالتعديل وتاريخ التعديل تلقائيًا.
-              </div>
-
-              {/* Edit Actions */}
-
-              <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={closeEditModal}
-                  disabled={editLoading}
-                  className="rounded-xl border border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                >
-                  إلغاء
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={editLoading}
-                  className="rounded-xl bg-indigo-700 px-7 py-3 text-sm font-bold text-white transition hover:bg-indigo-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                >
-                  {editLoading ? "جاري حفظ التعديلات..." : "حفظ التعديلات"}
-                </button>
-              </div>
-            </form>
-          </div>
+          )}
         </div>
+
+        {/* Status History */}
+
+        <div>
+          <SectionTitle
+            title="تاريخ تغييرات الحالة الأمنية"
+            count={statusHistory.length}
+          />
+
+          {statusHistory.length === 0 ? (
+            <EmptySection text="لا يوجد سجل لتغييرات الحالة الأمنية." />
+          ) : (
+            <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-800 text-white">
+                  <tr>
+                    <th className="whitespace-nowrap px-4 py-3 text-center">
+                      الحالة السابقة
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-3 text-center">
+                      الحالة الجديدة
+                    </th>
+                    <th className="min-w-56 px-4 py-3 text-center">
+                      سبب التغيير
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-3 text-center">
+                      تاريخ التغيير
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-3 text-center">
+                      المستخدم
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {statusHistory.map((item, historyIndex) => (
+                    <tr
+                      key={item.id ?? historyIndex}
+                      className="border-t border-slate-100 hover:bg-slate-50"
+                    >
+                      <td className="whitespace-nowrap px-4 py-3 text-center">
+                        {formatValue(item.old_status)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-3 text-center font-bold text-indigo-700">
+                        {formatValue(item.new_status)}
+                      </td>
+
+                      <td className="min-w-56 px-4 py-3 text-center">
+                        {formatValue(item.reason)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-3 text-center">
+                        {formatDateTime(item.changed_at)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-3 text-center">
+                        {formatValue(item.changed_by)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Permits */}
+
+        <div>
+          <SectionTitle
+            title="التصاريح"
+            count={permits.length}
+          />
+
+          {permits.length === 0 ? (
+            <EmptySection text="لا توجد تصاريح مسجلة لهذا الشخص." />
+          ) : (
+            <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+              {permits.map((permit, permitIndex) => (
+                <div
+                  key={permit.id ?? permitIndex}
+                  className="rounded-xl border border-blue-200 bg-blue-50/60 p-4"
+                >
+                  <h4 className="font-bold text-blue-900">
+                    تصريح رقم {formatValue(permit.permit_number)}
+                  </h4>
+
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <InfoItem label="الشركة" value={permit.company_name} />
+                    <InfoItem label="الفرع" value={permit.branch} />
+                    <InfoItem label="تاريخ الإصدار" value={formatDate(permit.issue_date)} />
+                  </div>
+
+                  {permit.notes && (
+                    <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                      {permit.notes}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </div>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Shared UI Components                                                       */
+/* -------------------------------------------------------------------------- */
+
+function SectionTitle({ title, count }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
+      <h4 className="font-extrabold text-slate-800">
+        {title}
+      </h4>
+
+      {count !== undefined && (
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
+          {count}
+        </span>
       )}
+    </div>
+  );
+}
+
+function InfoItem({ label, value }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-slate-100 bg-slate-50 p-3">
+      <p className="text-xs font-semibold text-slate-500">
+        {label}
+      </p>
+
+      <p className="mt-1 wrap-break-word text-sm font-bold leading-6 text-slate-800">
+        {formatValue(value)}
+      </p>
+    </div>
+  );
+}
+
+function EmptySection({ text }) {
+  return (
+    <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">
+      {text}
     </div>
   );
 }
