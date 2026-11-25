@@ -1,61 +1,5 @@
 export const DEMO_RAW_MATERIALS = [
   {
-    id: 1,
-    name: "فيليه دجاج",
-    barcode: "2302009000004",
-    pricePerKg: null,
-    unit: "كيلو",
-  },
-  {
-    id: 2,
-    name: "حمام كداب",
-    barcode: "2306474000002",
-    pricePerKg: null,
-    unit: "كيلو",
-  },
-  {
-    id: 3,
-    name: "شيش فريش",
-    barcode: "2302013000007",
-    pricePerKg: null,
-    unit: "كيلو",
-  },
-  {
-    id: 4,
-    name: "جناح",
-    barcode: "2303320000001",
-    pricePerKg: null,
-    unit: "كيلو",
-  },
-  {
-    id: 5,
-    name: "وراك",
-    barcode: "2302011000009",
-    pricePerKg: null,
-    unit: "كيلو",
-  },
-  {
-    id: 6,
-    name: "دجاج ابيض",
-    barcode: "2302010000000",
-    pricePerKg: null,
-    unit: "كيلو",
-  },
-  {
-    id: 7,
-    name: "دبوس فريش",
-    barcode: "2302018000002",
-    pricePerKg: null,
-    unit: "كيلو",
-  },
-  {
-    id: 8,
-    name: "فيليه",
-    barcode: "2302009000004",
-    pricePerKg: null,
-    unit: "كيلو",
-  },
-  {
     id: 9,
     name: "ثوم بودر",
     barcode: "2300076000002",
@@ -296,7 +240,7 @@ export const DEMO_RAW_MATERIALS = [
     unit: "كيلو",
   },
   { id: 42, name: "بيض", barcode: "2029160000055", pricePerKg: 5, unit: "حبة" },
-  { id: 43, name: "ماء", barcode: "", pricePerKg: null, unit: "لتر" },
+  { id: 43, name: "ماء", barcode: "", pricePerKg: 12, unit: "لتر" },
 ];
 
 export const EMPTY_INGREDIENT = {

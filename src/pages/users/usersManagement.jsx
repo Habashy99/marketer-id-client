@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -16,7 +15,9 @@ function UsersManagement() {
 
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [deletingId, setDeletingId] = useState(null);
     const [error, setError] = useState("");
+    const [success, setSuccess] = useState("");
     const [searchCode, setSearchCode] = useState("");
     const [modal, setModal] = useState(null);
 
@@ -65,6 +66,47 @@ function UsersManagement() {
         await fetchUsers(searchCode);
     };
 
+    const handleDeleteUser = async (selectedUser) => {
+        if (!selectedUser?.id) {
+            setError("بيانات المستخدم غير صحيحة.");
+            return;
+        }
+
+        if (Number(selectedUser.id) === Number(user?.id)) {
+            setError("لا يمكنك حذف حسابك الحالي.");
+            return;
+        }
+
+        const confirmed = window.confirm(
+            `هل أنت متأكد من حذف المستخدم التالي نهائيًا؟\n\nالاسم: ${selectedUser.name}\nالكود: ${selectedUser.code}\n\nسيتم حذف المستخدم وربط صلاحياته.`
+        );
+
+        if (!confirmed) return;
+
+        setDeletingId(selectedUser.id);
+        setError("");
+        setSuccess("");
+
+        try {
+            const response = await sendHttpReq(
+                `users/${selectedUser.id}`,
+                "DELETE"
+            );
+
+            setSuccess(
+                response?.message || "تم حذف المستخدم بنجاح."
+            );
+
+            await fetchUsers(searchCode);
+        } catch (err) {
+            setError(
+                err.message || "حدث خطأ أثناء حذف المستخدم."
+            );
+        } finally {
+            setDeletingId(null);
+        }
+    };
+
     const handleCloseModal = () => {
         setModal(null);
     };
@@ -74,7 +116,7 @@ function UsersManagement() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50">
+        <div className="min-h-screen bg-slate-50" dir="rtl">
             <div className="sticky top-0 z-40">
                 <Header user={user} />
             </div>
@@ -94,16 +136,33 @@ function UsersManagement() {
                 {error && (
                     <div
                         role="alert"
-                        className="mt-5 flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700"
+                        className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700"
                     >
                         <span>{error}</span>
 
                         <button
                             type="button"
-                            onClick={() => fetchUsers(searchCode)}
+                            onClick={() => setError("")}
                             className="font-semibold underline"
                         >
-                            إعادة المحاولة
+                            إغلاق
+                        </button>
+                    </div>
+                )}
+
+                {success && (
+                    <div
+                        role="status"
+                        className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-green-700"
+                    >
+                        <span>{success}</span>
+
+                        <button
+                            type="button"
+                            onClick={() => setSuccess("")}
+                            className="font-semibold underline"
+                        >
+                            إغلاق
                         </button>
                     </div>
                 )}
@@ -111,6 +170,8 @@ function UsersManagement() {
                 <UsersTable
                     users={users}
                     loading={loading}
+                    deletingId={deletingId}
+                    onDeleteUser={handleDeleteUser}
                 />
             </main>
 

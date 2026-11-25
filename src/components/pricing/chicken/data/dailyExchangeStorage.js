@@ -1,14 +1,17 @@
 
 const STORAGE_KEY = "dailyExchangeData";
+const PROFIT_MARGINS_RESET_KEY = "sellingPricesMarginsResetV1";
 
 const EMPTY_DATA = {
   exchanges: [],
   supplierFactors: {
     suppliers: [],
     stockPrices: [],
+    products: [],
   },
   manufacturingProducts: [],
-  profitMargins: null,
+  poultryProducts: [],
+  profitMargins: [],
 };
 
 /* -------------------------------------------------------------------------- */
@@ -33,6 +36,9 @@ const normalizeSupplierFactors = (data) => {
     stockPrices: Array.isArray(factors.stockPrices)
       ? factors.stockPrices
       : [],
+    products: Array.isArray(factors.products)
+      ? factors.products
+      : [],
   };
 };
 
@@ -50,12 +56,41 @@ const normalizeData = (data) => ({
     ? data.manufacturingProducts
     : [],
 
-  // null تعني أن هوامش الربح لم يتم تهيئتها بعد.
-  // [] تعني أنه تم حفظها ولكن لا توجد سجلات حاليًا.
+  poultryProducts: Array.isArray(data?.poultryProducts)
+    ? data.poultryProducts
+    : [],
+
   profitMargins: Array.isArray(data?.profitMargins)
     ? data.profitMargins
-    : null,
+    : [],
 });
+
+/* -------------------------------------------------------------------------- */
+/* One-Time Old Profit Margins Reset                                          */
+/* -------------------------------------------------------------------------- */
+
+const resetOldProfitMarginsOnce = (data) => {
+  try {
+    const alreadyReset = localStorage.getItem(PROFIT_MARGINS_RESET_KEY);
+
+    if (alreadyReset === "true") {
+      return data;
+    }
+
+    const cleanData = {
+      ...data,
+      profitMargins: [],
+    };
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanData));
+    localStorage.setItem(PROFIT_MARGINS_RESET_KEY, "true");
+
+    return cleanData;
+  } catch (error) {
+    console.error("Failed to reset old profit margins:", error);
+    return data;
+  }
+};
 
 /* -------------------------------------------------------------------------- */
 /* Shared Storage                                                             */
@@ -65,9 +100,14 @@ export const getDailyExchangeData = () => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
 
-    if (!saved) return cloneData(EMPTY_DATA);
+    if (!saved) {
+      const emptyData = cloneData(EMPTY_DATA);
+      return resetOldProfitMarginsOnce(emptyData);
+    }
 
-    return normalizeData(JSON.parse(saved));
+    const normalized = normalizeData(JSON.parse(saved));
+
+    return resetOldProfitMarginsOnce(normalized);
   } catch (error) {
     console.error("Failed to load daily exchange data:", error);
     return cloneData(EMPTY_DATA);
@@ -95,10 +135,14 @@ export const saveDailyExchangeData = (data = {}) => {
         ? data.manufacturingProducts
         : current.manufacturingProducts,
 
+      poultryProducts: Array.isArray(data.poultryProducts)
+        ? data.poultryProducts
+        : current.poultryProducts,
+
       profitMargins: Array.isArray(data.profitMargins)
         ? data.profitMargins
         : data.profitMargins === null
-          ? null
+          ? []
           : current.profitMargins,
     });
 
@@ -141,6 +185,22 @@ export const saveManufacturingProducts = (products) => {
 };
 
 /* -------------------------------------------------------------------------- */
+/* Poultry Products Storage                                                   */
+/* -------------------------------------------------------------------------- */
+
+export const getPoultryProducts = () => {
+  return getDailyExchangeData().poultryProducts;
+};
+
+export const savePoultryProducts = (products) => {
+  if (!Array.isArray(products)) return false;
+
+  return updateDailyExchangeData({
+    poultryProducts: products,
+  });
+};
+
+/* -------------------------------------------------------------------------- */
 /* Profit Margins Storage                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -162,30 +222,40 @@ export const saveProfitMargins = (margins) => {
 
 export const getSupplierFactorsData = () => {
   const data = getDailyExchangeData();
+  const factors = data.supplierFactors || {};
 
   return {
-    suppliers: data.supplierFactors.suppliers,
-    stockPrices: data.supplierFactors.stockPrices,
+    suppliers: Array.isArray(factors.suppliers) ? factors.suppliers : [],
+    stockPrices: Array.isArray(factors.stockPrices)
+      ? factors.stockPrices
+      : [],
+    products: Array.isArray(factors.products) ? factors.products : [],
   };
 };
 
 export const saveSupplierFactorsData = ({
   suppliers,
   stockPrices,
+  products,
 } = {}) => {
   const current = getDailyExchangeData();
+  const currentFactors = current.supplierFactors || {};
 
   return updateDailyExchangeData({
     supplierFactors: {
-      ...current.supplierFactors,
+      ...currentFactors,
 
       suppliers: Array.isArray(suppliers)
         ? suppliers
-        : current.supplierFactors.suppliers,
+        : currentFactors.suppliers || [],
 
       stockPrices: Array.isArray(stockPrices)
         ? stockPrices
-        : current.supplierFactors.stockPrices,
+        : currentFactors.stockPrices || [],
+
+      products: Array.isArray(products)
+        ? products
+        : currentFactors.products || [],
     },
   });
 };
@@ -212,6 +282,19 @@ export const saveStockPrices = (stockPrices) => {
     supplierFactors: {
       ...current.supplierFactors,
       stockPrices,
+    },
+  });
+};
+
+export const saveSupplierProducts = (products) => {
+  if (!Array.isArray(products)) return false;
+
+  const current = getDailyExchangeData();
+
+  return updateDailyExchangeData({
+    supplierFactors: {
+      ...current.supplierFactors,
+      products,
     },
   });
 };
@@ -360,4 +443,145 @@ export const getSupplierFinalPrice = ({
   if (factor === null) return null;
 
   return supplierPrice * factor;
+};
+
+/* -------------------------------------------------------------------------- */
+/* Daily Exchange Helpers                                                     */
+/* -------------------------------------------------------------------------- */
+
+export const saveExchange = (exchange) => {
+  if (!exchange?.date) return false;
+
+  const data = getDailyExchangeData();
+  const exchanges = [...data.exchanges];
+
+  const index = exchanges.findIndex(
+    (item) => item.date === exchange.date,
+  );
+
+  if (index >= 0) {
+    exchanges[index] = {
+      ...exchanges[index],
+      ...exchange,
+    };
+  } else {
+    exchanges.push(exchange);
+  }
+
+  exchanges.sort((a, b) => b.date.localeCompare(a.date));
+
+  return updateDailyExchangeData({ exchanges });
+};
+
+export const deleteExchange = (date) => {
+  if (!date) return false;
+
+  const data = getDailyExchangeData();
+
+  return updateDailyExchangeData({
+    exchanges: data.exchanges.filter(
+      (exchange) => exchange.date !== date,
+    ),
+  });
+};
+
+export const getExchangeProducts = (exchange) => {
+  return Array.isArray(exchange?.products)
+    ? exchange.products
+    : [];
+};
+
+export const saveExchangeProducts = (date, products) => {
+  if (!date || !Array.isArray(products)) return false;
+
+  const data = getDailyExchangeData();
+
+  const exchange = data.exchanges.find(
+    (item) => item.date === date,
+  );
+
+  if (!exchange) return false;
+
+  return saveExchange({
+    ...exchange,
+    products,
+  });
+};
+
+/* -------------------------------------------------------------------------- */
+/* Product Key Matching                                                       */
+/* -------------------------------------------------------------------------- */
+
+const getMatchingProductKey = (data, productId) => {
+  if (!data || typeof data !== "object") return null;
+
+  const rawId = String(productId ?? "").trim();
+  if (!rawId) return null;
+
+  const candidates = [
+    rawId,
+    `barcode:${rawId}`,
+    `itemean:${rawId}`,
+    `legacy:${rawId}`,
+  ];
+
+  for (const key of candidates) {
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+      return key;
+    }
+  }
+
+  return (
+    Object.keys(data).find(
+      (key) => key === rawId || key.endsWith(`:${rawId}`),
+    ) || null
+  );
+};
+
+/* -------------------------------------------------------------------------- */
+/* Highest Supplier Factor                                                    */
+/* -------------------------------------------------------------------------- */
+
+export const getHighestSupplierFactor = ({
+  supplier,
+  productId,
+  date,
+}) => {
+  const period = getActiveSupplierPeriod(supplier, date);
+
+  if (!period) return null;
+
+  const productKey = getMatchingProductKey(
+    period.productFactors,
+    productId,
+  );
+
+  if (!productKey) return null;
+
+  const baseFactor = Number(
+    period.productFactors?.[productKey],
+  );
+
+  const factors = [];
+
+  if (Number.isFinite(baseFactor) && baseFactor > 0) {
+    factors.push(baseFactor);
+  }
+
+  const branchOverrides =
+    period.overrides?.[productKey] || {};
+
+  Object.values(branchOverrides).forEach((value) => {
+    if (value === null || value === undefined || value === "") {
+      return;
+    }
+
+    const factor = Number(value);
+
+    if (Number.isFinite(factor) && factor > 0) {
+      factors.push(factor);
+    }
+  });
+
+  return factors.length ? Math.max(...factors) : null;
 };

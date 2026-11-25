@@ -1,77 +1,26 @@
-
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../../header.jsx";
-
+import { sendHttpReq } from "../../../lib/httpHandler";
 import {
   DEMO_RAW_MATERIALS,
   EMPTY_INGREDIENT,
 } from "./data/constantsManufacturingCost";
 
 import {
-  BRANCHES,
-  INITIAL_PRODUCTS,
-} from "./data/constantsSupplierFactors";
-
-import {
+  getPoultryProducts,
   getDailyExchangeData,
   getExchangeByDate,
   getSupplierExchangePrice,
   getActiveSupplierPeriod,
-  getSupplierFactor,
+  getHighestSupplierFactor,
   getManufacturingProducts,
   saveManufacturingProducts,
 } from "./data/dailyExchangeStorage";
 
 /* -------------------------------------------------------------------------- */
-/* Poultry Mapping                                                            */
-/* -------------------------------------------------------------------------- */
-
-const POULTRY_PRODUCT_MAP = {
-  1: 3,
-  3: 5,
-  4: 11,
-  6: 2,
-  7: 6,
-  8: 3,
-};
-
-/* -------------------------------------------------------------------------- */
 /* Base Products and Selling Categories                                       */
 /* -------------------------------------------------------------------------- */
-
-const BASE_PRODUCTS = [
-  {
-    id: 1,
-    barcode: "2302012000008",
-    name: "دجاج بلدي فريش",
-    type: "baladi",
-  },
-  {
-    id: 2,
-    barcode: "2302012000009",
-    name: "دجاج أبيض فريش",
-    type: "white",
-  },
-  {
-    id: 12,
-    barcode: "2302012000010",
-    name: "دجاج مجمد",
-    type: "white",
-  },
-  {
-    id: 7,
-    barcode: "2302012000011",
-    name: "صدور دجاج",
-    type: "white",
-  },
-  {
-    id: 3,
-    barcode: "2302009000004",
-    name: "فيليه دجاج فريش",
-    type: "white",
-  },
-];
 
 const SELLING_CATEGORIES = [
   "الإسكندرية",
@@ -128,14 +77,89 @@ const getQuantityKg = (quantity, unit) => {
   return 0;
 };
 
-const getPoultryProductId = (materialId) =>
-  POULTRY_PRODUCT_MAP[Number(materialId)] ?? null;
+const isPoultryMaterial = (material) => Boolean(material?.isPoultry === true);
 
-const isPoultryMaterial = (material) =>
-  Boolean(material && material.pricePerKg === null);
+const normalizeSupplierName = (value = "") =>
+  String(value)
+    .trim()
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/[ًٌٍَُِّْـ]/g, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 
-const getExchangeTypeLabel = (type) =>
-  type === "baladi" ? "بلدي" : "أبيض";
+const toPoultryMaterial = (product = {}) => {
+  const barcode = String(product.barcode ?? product.id ?? "").trim();
+  const itemean = String(product.itemean ?? "").trim();
+  const factorProductKey = itemean
+    ? `itemean:${itemean}`
+    : barcode
+      ? `barcode:${barcode}`
+      : "";
+
+  const name = String(
+    product.name ||
+      product.productName ||
+      product.product_name ||
+      product.a_name ||
+      "",
+  ).trim();
+
+  const linkedSuppliers = Array.isArray(product.suppliers)
+    ? product.suppliers
+    : [];
+
+  const supplierIds = [
+    ...new Set(
+      [
+        product.supplierId,
+        ...(Array.isArray(product.supplierIds) ? product.supplierIds : []),
+        ...linkedSuppliers.map(
+          (supplier) =>
+            supplier?.supplierId ?? supplier?.supplier_id ?? supplier?.id,
+        ),
+      ]
+        .filter((id) => id !== undefined && id !== null && id !== "")
+        .map(String),
+    ),
+  ];
+
+  const rawType = String(
+    product.poultryType || product.poultry_type || product.type || "",
+  )
+    .trim()
+    .toLowerCase();
+
+  return {
+    ...product,
+    id: barcode || factorProductKey,
+    barcode,
+    itemean,
+    factorProductKey,
+    code: String(product.code || itemean || barcode),
+    name,
+    supplierId: supplierIds[0] || "",
+    supplierIds,
+    supplierName: String(
+      product.supplierName ||
+        product.supplier ||
+        linkedSuppliers[0]?.supplierName ||
+        linkedSuppliers[0]?.name ||
+        "",
+    ),
+    suppliers: linkedSuppliers,
+    pricePerKg: null,
+    unit: "كيلو",
+    isPoultry: true,
+    poultryType:
+      rawType === "baladi" || rawType.includes("بلدي") || /بلدي/.test(name)
+        ? "baladi"
+        : "white",
+    regionalPrices: product.regionalPrices || {},
+  };
+};
+
+const getExchangeTypeLabel = (type) => (type === "baladi" ? "بلدي" : "أبيض");
 
 const getUnitBaseValue = (value, unit, type) => {
   const number = Number(value);
@@ -228,11 +252,7 @@ const getDefaultCalculation = (material) => {
     const isCount = ["حبة", "قطعة"].includes(usageUnit);
 
     return {
-      calculationType: isVolume
-        ? "volume"
-        : isCount
-          ? "piece"
-          : "weight",
+      calculationType: isVolume ? "volume" : isCount ? "piece" : "weight",
       packageSize: String(material.packageSize),
       packageUnit: usageUnit,
       pieceMode: isCount ? "count" : "weight",
@@ -266,29 +286,73 @@ const getDraftForMaterial = (material, previous = {}) => ({
   ...getDefaultCalculation(material),
   catalogId: String(material?.id || ""),
   supplierId: "",
-  poultryType: "white",
+  poultryType: material?.poultryType || "white",
   ...previous,
 });
+
+const normalizeProductBarcode = (value) => String(value ?? "").trim();
 
 /* -------------------------------------------------------------------------- */
 /* Selling Price Calculation                                                  */
 /* -------------------------------------------------------------------------- */
 
+const normalizeMarginIdentifier = (value) => {
+  const normalized = String(value ?? "").trim();
+
+  if (!normalized) return [];
+
+  const identifiers = [normalized];
+
+  if (normalized.startsWith("itemean:")) {
+    identifiers.push(normalized.slice("itemean:".length));
+  }
+
+  if (normalized.startsWith("barcode:")) {
+    identifiers.push(normalized.slice("barcode:".length));
+  }
+
+  return identifiers;
+};
+
+const getMarginProductIdentifiers = (item) => {
+  return [item?.productId, item?.barcode, item?.itemean, item?.id, item?.key]
+    .flatMap(normalizeMarginIdentifier)
+    .filter(Boolean);
+};
+
+const getBaseProductItemean = (ingredients = [], baseProductId = "") => {
+  const baseId = String(baseProductId ?? "").trim();
+
+  const baseIngredient =
+    ingredients.find((item) => item.isBaseProduct) ||
+    ingredients.find(
+      (item) =>
+        String(item.barcode ?? "").trim() === baseId ||
+        String(item.ingredientProductId ?? "").trim() === baseId,
+    );
+
+  return String(baseIngredient?.itemean ?? "").trim();
+};
+
 const getProductSellingPrices = ({
   costPerKg,
   baseProductId,
+  baseProductItemean,
   costDate,
   profitMargins,
 }) => {
   const roundedCostPerKg = Math.round(Number(costPerKg || 0));
 
-  const selectedBaseProduct = BASE_PRODUCTS.find(
-    (product) => Number(product.id) === Number(baseProductId),
+  const baseIdentifiers = new Set(
+    [
+      ...normalizeMarginIdentifier(baseProductId),
+      ...normalizeMarginIdentifier(baseProductItemean),
+    ].filter(Boolean),
   );
 
   return SELLING_CATEGORIES.map((category) => {
     if (
-      !selectedBaseProduct ||
+      baseIdentifiers.size === 0 ||
       !costDate ||
       !Number.isFinite(roundedCostPerKg) ||
       roundedCostPerKg <= 0 ||
@@ -303,16 +367,17 @@ const getProductSellingPrices = ({
 
     const activeMargins = profitMargins
       .filter((item) => {
-        const sameProduct =
-          Number(item.productId) === Number(selectedBaseProduct.id);
+        const marginIdentifiers = getMarginProductIdentifiers(item);
+
+        const sameProduct = marginIdentifiers.some((identifier) =>
+          baseIdentifiers.has(identifier),
+        );
 
         const sameCategory = item.category === category;
 
-        const validStartDate =
-          item.startDate && item.startDate <= costDate;
+        const validStartDate = item.startDate && item.startDate <= costDate;
 
-        const validEndDate =
-          !item.endDate || item.endDate >= costDate;
+        const validEndDate = !item.endDate || item.endDate >= costDate;
 
         const validMargin =
           item.profitMargin !== null &&
@@ -328,9 +393,7 @@ const getProductSellingPrices = ({
           validMargin
         );
       })
-      .sort((a, b) =>
-        String(b.startDate).localeCompare(String(a.startDate)),
-      );
+      .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
 
     const activeMargin = activeMargins[0];
 
@@ -413,11 +476,7 @@ const calculateIngredientCost = (draft, material, pricing) => {
       "weight",
     );
 
-    const usedAmount = getUnitBaseValue(
-      quantity,
-      draft.unit,
-      "weight",
-    );
+    const usedAmount = getUnitBaseValue(quantity, draft.unit, "weight");
 
     if (packageAmount <= 0 || usedAmount <= 0) return 0;
 
@@ -431,11 +490,7 @@ const calculateIngredientCost = (draft, material, pricing) => {
       "volume",
     );
 
-    const usedAmount = getUnitBaseValue(
-      quantity,
-      draft.unit,
-      "volume",
-    );
+    const usedAmount = getUnitBaseValue(quantity, draft.unit, "volume");
 
     if (packageAmount <= 0 || usedAmount <= 0) return 0;
 
@@ -459,11 +514,7 @@ const calculateIngredientCost = (draft, material, pricing) => {
       "weight",
     );
 
-    const usedWeight = getUnitBaseValue(
-      quantity,
-      draft.unit,
-      "weight",
-    );
+    const usedWeight = getUnitBaseValue(quantity, draft.unit, "weight");
 
     const packageWeight = packagePieces * pieceWeight;
 
@@ -523,9 +574,7 @@ function SellingPricesTable({ prices, costPerKg }) {
         <table className="w-full min-w-150 text-right">
           <thead>
             <tr className="bg-slate-800 text-white">
-              <th className="whitespace-nowrap px-4 py-3 text-sm">
-                الفئة
-              </th>
+              <th className="whitespace-nowrap px-4 py-3 text-sm">الفئة</th>
 
               <th className="whitespace-nowrap px-4 py-3 text-sm">
                 هامش الربح
@@ -571,8 +620,8 @@ function SellingPricesTable({ prices, costPerKg }) {
       </div>
 
       <p className="border-t border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-        معادلة الحساب: تكلفة الكيلو بعد التقريب × (1 + هامش الربح ÷ 100)،
-        ثم تقريب الناتج لأقرب جنيه.
+        معادلة الحساب: تكلفة الكيلو بعد التقريب × (1 + هامش الربح ÷ 100)، ثم
+        تقريب الناتج لأقرب جنيه.
       </p>
     </div>
   );
@@ -604,6 +653,9 @@ function ManufacturingCost() {
   });
 
   const [products, setProducts] = useState([]);
+  const [poultryCatalog, setPoultryCatalog] = useState(() =>
+    getPoultryProducts(),
+  );
   const [isHydrated, setIsHydrated] = useState(false);
 
   const exchanges = sharedData.exchanges || [];
@@ -616,6 +668,12 @@ function ManufacturingCost() {
   const [search, setSearch] = useState("");
   const [productName, setProductName] = useState("");
   const [baseProductId, setBaseProductId] = useState("");
+  const [baseProductName, setBaseProductName] = useState("");
+  const [baseProductSearch, setBaseProductSearch] = useState("");
+  const [pendingBaseProduct, setPendingBaseProduct] = useState(null);
+  const [baseProductQuantity, setBaseProductQuantity] = useState("1");
+  const [isSearchingBarcode, setIsSearchingBarcode] = useState(false);
+  const [barcodeSearchError, setBarcodeSearchError] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [costDate, setCostDate] = useState(getTodayDate());
 
@@ -661,6 +719,7 @@ function ManufacturingCost() {
     });
 
     setProducts(getManufacturingProducts());
+    setPoultryCatalog(getPoultryProducts());
     setIsHydrated(true);
   }, []);
 
@@ -677,11 +736,12 @@ function ManufacturingCost() {
       try {
         const parsed = JSON.parse(event.newValue);
 
+        setPoultryCatalog(
+          Array.isArray(parsed.poultryProducts) ? parsed.poultryProducts : [],
+        );
         setSharedData({
           ...parsed,
-          exchanges: Array.isArray(parsed.exchanges)
-            ? parsed.exchanges
-            : [],
+          exchanges: Array.isArray(parsed.exchanges) ? parsed.exchanges : [],
           supplierFactors: parsed.supplierFactors || {
             suppliers: [],
             stockPrices: [],
@@ -702,40 +762,61 @@ function ManufacturingCost() {
 
   /* Catalog */
 
+  const rawMaterials = useMemo(() => {
+    const poultryMaterials = poultryCatalog
+      .map(toPoultryMaterial)
+      .filter((item) => item.id && item.name);
+
+    const byBarcode = new Map();
+    const withoutBarcode = [];
+    [...DEMO_RAW_MATERIALS, ...poultryMaterials].forEach((item) => {
+      const barcode = normalizeProductBarcode(item.barcode);
+      if (!barcode) {
+        withoutBarcode.push(item);
+        return;
+      }
+      if (!byBarcode.has(barcode) || item.isPoultry)
+        byBarcode.set(barcode, item);
+    });
+    return [...byBarcode.values(), ...withoutBarcode];
+  }, [poultryCatalog]);
+
   const filteredCatalog = useMemo(() => {
     const keyword = catalogSearch.trim().toLowerCase();
 
-    return DEMO_RAW_MATERIALS.filter(
+    return rawMaterials.filter(
       (item) =>
-        item.name.toLowerCase().includes(keyword) ||
-        String(item.barcode || "").includes(keyword),
+        String(item.name || "")
+          .toLowerCase()
+          .includes(keyword) || String(item.barcode || "").includes(keyword),
     );
-  }, [catalogSearch]);
+  }, [catalogSearch, rawMaterials]);
 
   const filteredDetailCatalog = useMemo(() => {
     const keyword = detailCatalogSearch.trim().toLowerCase();
 
-    return DEMO_RAW_MATERIALS.filter(
+    return rawMaterials.filter(
       (item) =>
-        item.name.toLowerCase().includes(keyword) ||
-        String(item.barcode || "").includes(keyword),
+        String(item.name || "")
+          .toLowerCase()
+          .includes(keyword) || String(item.barcode || "").includes(keyword),
     );
-  }, [detailCatalogSearch]);
+  }, [detailCatalogSearch, rawMaterials]);
 
   const selectedMaterial = useMemo(
     () =>
-      DEMO_RAW_MATERIALS.find(
-        (item) => item.id === Number(ingredientDraft.catalogId),
+      rawMaterials.find(
+        (item) => String(item.id) === String(ingredientDraft.catalogId),
       ),
-    [ingredientDraft.catalogId],
+    [ingredientDraft.catalogId, rawMaterials],
   );
 
   const selectedDetailMaterial = useMemo(
     () =>
-      DEMO_RAW_MATERIALS.find(
-        (item) => item.id === Number(detailDraft.catalogId),
+      rawMaterials.find(
+        (item) => String(item.id) === String(detailDraft.catalogId),
       ),
-    [detailDraft.catalogId],
+    [detailDraft.catalogId, rawMaterials],
   );
 
   /* Supplier Helpers */
@@ -743,20 +824,45 @@ function ManufacturingCost() {
   const getSuppliersForMaterial = (material) => {
     if (!material) return [];
 
-    const supplierProductId = getPoultryProductId(material.id);
+    const supplierIds = [
+      ...(Array.isArray(material.supplierIds) ? material.supplierIds : []),
+      material.supplierId,
+      ...(Array.isArray(material.suppliers)
+        ? material.suppliers.map(
+            (supplier) =>
+              supplier?.supplierId ?? supplier?.supplier_id ?? supplier?.id,
+          )
+        : []),
+    ]
+      .filter((id) => id !== undefined && id !== null && id !== "")
+      .map(String);
 
-    if (!supplierProductId) return [];
+    const uniqueSupplierIds = [...new Set(supplierIds)];
 
-    const productDefinition = INITIAL_PRODUCTS.find(
-      (item) => Number(item.id) === Number(supplierProductId),
-    );
+    // البحث باستخدام معرفات الموردين القادمة من API.
+    if (uniqueSupplierIds.length) {
+      return suppliers.filter((supplier) =>
+        uniqueSupplierIds.includes(
+          String(supplier.id ?? supplier.supplierId ?? supplier.supplier_id),
+        ),
+      );
+    }
 
-    if (!productDefinition?.supplierIds?.length) return suppliers;
+    // الرجوع للاسم فقط عند عدم وجود أي معرف.
+    const supplierName =
+      material.supplierName ||
+      material.suppliers?.[0]?.supplierName ||
+      material.suppliers?.[0]?.name ||
+      "";
 
-    return suppliers.filter((supplier) =>
-      productDefinition.supplierIds.some(
-        (id) => String(id) === String(supplier.id),
-      ),
+    if (!supplierName) return [];
+
+    const targetName = normalizeSupplierName(supplierName);
+
+    return suppliers.filter(
+      (supplier) =>
+        normalizeSupplierName(supplier.name || supplier.supplierName || "") ===
+        targetName,
     );
   };
 
@@ -793,13 +899,20 @@ function ManufacturingCost() {
       };
     }
 
-    const supplierProductId = getPoultryProductId(material.id);
+    const supplierProductId = String(
+      material.factorProductKey ||
+        (material.itemean
+          ? `itemean:${String(material.itemean).trim()}`
+          : material.barcode
+            ? `barcode:${String(material.barcode).trim()}`
+            : material.id || ""),
+    ).trim();
 
     if (!supplierProductId) {
       return {
         isPoultry: true,
         price: null,
-        error: "هذه الخامة غير مرتبطة ببورصة الموردين أو معاملاتهم",
+        error: "الصنف لا يحتوي على باركود صالح لربطه بمعامل المورد",
       };
     }
 
@@ -829,30 +942,41 @@ function ManufacturingCost() {
       };
     }
 
-    // جميع الموردين المرتبطين بالصنف.
-
-    const materialSuppliers = getSuppliersForMaterial(material);
-
-    if (!materialSuppliers.length) {
-      return {
-        isPoultry: true,
-        price: null,
-        error: "لا يوجد مورد مرتبط بهذا الصنف",
-      };
-    }
+    // نبدأ بالموردين المرتبطين بالصنف، ثم نضيف بقية الموردين
+    // حتى لا يمنع نقص supplierIds ظهور مورد لديه معامل صالح بالفعل.
+    const linkedSuppliers = getSuppliersForMaterial(material);
+    const allSuppliers = [...linkedSuppliers, ...suppliers];
+    const uniqueSuppliers = [
+      ...new Map(
+        allSuppliers
+          .map((supplier) => {
+            const id = String(
+              supplier?.id ??
+                supplier?.supplierId ??
+                supplier?.supplier_id ??
+                "",
+            ).trim();
+            return [id, supplier];
+          })
+          .filter(([id]) => Boolean(id)),
+      ).values(),
+    ];
 
     const validCandidates = [];
 
-    // البحث عن أعلى معامل متاح لكل الموردين.
+    // لا يُقبل المورد إلا إذا كان لديه فترة فعالة وسعر بورصة ومعامل صالح.
 
-    materialSuppliers.forEach((supplier) => {
+    uniqueSuppliers.forEach((supplier) => {
       const period = getActiveSupplierPeriod(supplier, selectedDate);
 
       if (!period) return;
 
+      const supplierId =
+        supplier.id ?? supplier.supplierId ?? supplier.supplier_id;
+
       const supplierPrice = getSupplierExchangePrice({
         exchange,
-        supplierId: supplier.id,
+        supplierId,
         type: draft.poultryType,
       });
 
@@ -865,26 +989,19 @@ function ManufacturingCost() {
         return;
       }
 
-      // استخراج معاملات جميع الفروع لهذا المورد.
+      // أعلى معامل = معامل الصنف الأساسي أو أعلى override لأي فرع.
+      const highestFactor = getHighestSupplierFactor({
+        supplier,
+        productId: supplierProductId,
+        date: selectedDate,
+      });
 
-      const validFactors = BRANCHES.map((branch) =>
-        getSupplierFactor({
-          supplier,
-          productId: supplierProductId,
-          branchId: String(branch.id),
-          date: selectedDate,
-        }),
-      ).filter(
-        (factor) =>
-          factor !== null &&
-          factor !== undefined &&
-          Number.isFinite(Number(factor)) &&
-          Number(factor) > 0,
-      );
-
-      if (!validFactors.length) return;
-
-      const highestFactor = Math.max(...validFactors.map(Number));
+      if (
+        !Number.isFinite(Number(highestFactor)) ||
+        Number(highestFactor) <= 0
+      ) {
+        return;
+      }
 
       const finalPrice = Number(supplierPrice) * highestFactor;
 
@@ -894,6 +1011,7 @@ function ManufacturingCost() {
 
       validCandidates.push({
         supplier,
+        supplierId,
         supplierPrice: Number(supplierPrice),
         factor: highestFactor,
         price: finalPrice,
@@ -905,8 +1023,7 @@ function ManufacturingCost() {
       return {
         isPoultry: true,
         price: null,
-        error:
-          "لا يوجد مورد لديه سعر بورصة ومعامل ساري في التاريخ المحدد",
+        error: "لا يوجد مورد لديه سعر بورصة ومعامل ساري في التاريخ المحدد",
       };
     }
 
@@ -933,6 +1050,7 @@ function ManufacturingCost() {
       factor: selectedCandidate.factor,
 
       supplier: selectedCandidate.supplier,
+      supplierId: selectedCandidate.supplierId,
       supplierProductId,
       exchange,
       period: selectedCandidate.period,
@@ -990,7 +1108,7 @@ function ManufacturingCost() {
           <select
             value={draft.catalogId || ""}
             onChange={(event) => {
-              const selected = DEMO_RAW_MATERIALS.find(
+              const selected = rawMaterials.find(
                 (item) => String(item.id) === event.target.value,
               );
 
@@ -1308,9 +1426,7 @@ function ManufacturingCost() {
                       </div>
 
                       <div>
-                        <p className="text-xs text-slate-500">
-                          أعلى معامل
-                        </p>
+                        <p className="text-xs text-slate-500">أعلى معامل</p>
 
                         <p className="mt-1 font-extrabold text-slate-800">
                           {pricing.factor ?? "—"}
@@ -1412,20 +1528,20 @@ function ManufacturingCost() {
 
   /* Ingredient Creation */
 
-  const createIngredient = (draft, selectedDate = costDate) => {
-    const material = DEMO_RAW_MATERIALS.find(
-      (item) => item.id === Number(draft.catalogId),
-    );
+  const createIngredient = (
+    draft,
+    selectedDate = costDate,
+    materialOverride = null,
+  ) => {
+    const material =
+      materialOverride ||
+      rawMaterials.find((item) => String(item.id) === String(draft.catalogId));
 
     if (!material) return null;
 
     const pricing = getIngredientPricing(draft, material, selectedDate);
 
-    const validationError = validateIngredientDraft(
-      draft,
-      material,
-      pricing,
-    );
+    const validationError = validateIngredientDraft(draft, material, pricing);
 
     if (validationError) return { error: validationError };
 
@@ -1444,6 +1560,8 @@ function ManufacturingCost() {
       ingredientProductId: material.id,
       name: material.name,
       barcode: material.barcode,
+      itemean: material.itemean || "",
+      factorProductKey: material.factorProductKey || "",
 
       unitPrice: pricing.price,
       priceUnit: pricing.priceUnit,
@@ -1464,11 +1582,19 @@ function ManufacturingCost() {
 
       costDate: selectedDate,
       isPoultry: pricing.isPoultry,
+      isBaseProduct: Boolean(draft.isBaseProduct),
     };
 
     if (pricing.isPoultry) {
-      ingredient.supplierId = String(pricing.supplier.id);
-      ingredient.supplierName = pricing.supplier.name;
+      ingredient.supplierId = String(
+        pricing.supplierId ??
+          pricing.supplier.id ??
+          pricing.supplier.supplierId ??
+          pricing.supplier.supplier_id ??
+          "",
+      );
+      ingredient.supplierName =
+        pricing.supplier.name || pricing.supplier.supplierName || "مورد";
       ingredient.supplierProductId = pricing.supplierProductId;
       ingredient.poultryType = draft.poultryType;
       ingredient.poultryTypeLabel = getExchangeTypeLabel(draft.poultryType);
@@ -1504,20 +1630,16 @@ function ManufacturingCost() {
       0,
     );
 
-    const totalQuantityKg = productIngredients.reduce(
-      (sum, item) => {
-        const quantityKg =
-          item.quantityKg !== undefined && item.quantityKg !== null
-            ? Number(item.quantityKg)
-            : getQuantityKg(item.quantity, item.unit);
+    const totalQuantityKg = productIngredients.reduce((sum, item) => {
+      const quantityKg =
+        item.quantityKg !== undefined && item.quantityKg !== null
+          ? Number(item.quantityKg)
+          : getQuantityKg(item.quantity, item.unit);
 
-        return sum + (Number.isFinite(quantityKg) ? quantityKg : 0);
-      },
-      0,
-    );
+      return sum + (Number.isFinite(quantityKg) ? quantityKg : 0);
+    }, 0);
 
-    const costPerKg =
-      totalQuantityKg > 0 ? totalCost / totalQuantityKg : 0;
+    const costPerKg = totalQuantityKg > 0 ? totalCost / totalQuantityKg : 0;
 
     return {
       ...product,
@@ -1561,6 +1683,9 @@ function ManufacturingCost() {
   const resetForm = () => {
     setProductName("");
     setBaseProductId("");
+    setBaseProductName("");
+    setBaseProductSearch("");
+    setBarcodeSearchError("");
     setIngredients([]);
     setEditingId(null);
     setCostDate(getTodayDate());
@@ -1600,22 +1725,18 @@ function ManufacturingCost() {
 
   const totalQuantityKg = useMemo(
     () =>
-      ingredients.reduce(
-        (total, item) => {
-          const quantityKg =
-            item.quantityKg !== undefined && item.quantityKg !== null
-              ? Number(item.quantityKg)
-              : getQuantityKg(item.quantity, item.unit);
+      ingredients.reduce((total, item) => {
+        const quantityKg =
+          item.quantityKg !== undefined && item.quantityKg !== null
+            ? Number(item.quantityKg)
+            : getQuantityKg(item.quantity, item.unit);
 
-          return total + (Number.isFinite(quantityKg) ? quantityKg : 0);
-        },
-        0,
-      ),
+        return total + (Number.isFinite(quantityKg) ? quantityKg : 0);
+      }, 0),
     [ingredients],
   );
 
-  const costPerKg =
-    totalQuantityKg > 0 ? totalCost / totalQuantityKg : 0;
+  const costPerKg = totalQuantityKg > 0 ? totalCost / totalQuantityKg : 0;
 
   /* Main Form Selling Prices */
 
@@ -1636,7 +1757,9 @@ function ManufacturingCost() {
     const keyword = search.trim().toLowerCase();
 
     return products.filter((item) =>
-      String(item.name || "").toLowerCase().includes(keyword),
+      String(item.name || "")
+        .toLowerCase()
+        .includes(keyword),
     );
   }, [products, search]);
 
@@ -1666,18 +1789,229 @@ function ManufacturingCost() {
     (item) => item.id === selectedProductId,
   );
 
-  const selectedProductSellingPrices = useMemo(() => {
-    if (!selectedProduct) return [];
-
-    return getProductSellingPrices({
-      costPerKg: selectedProduct.costPerKg,
-      baseProductId: selectedProduct.baseProductId,
-      costDate: selectedProduct.costDate,
-      profitMargins,
-    });
-  }, [selectedProduct, profitMargins]);
+  const selectedProductSellingPrices = selectedProduct
+    ? getProductSellingPrices({
+        costPerKg: selectedProduct.costPerKg,
+        baseProductId: selectedProduct.baseProductId,
+        baseProductItemean: getBaseProductItemean(
+          selectedProduct.ingredients || [],
+          selectedProduct.baseProductId,
+        ),
+        costDate: selectedProduct.costDate,
+        profitMargins,
+      })
+    : [];
 
   /* Main Form: Add Ingredient */
+
+  const selectBaseProduct = async () => {
+    const searchValue = normalizeProductBarcode(
+      baseProductId || baseProductSearch,
+    );
+
+    if (!searchValue) {
+      setBarcodeSearchError("اكتب باركود المنتج أولاً.");
+      return;
+    }
+
+    setIsSearchingBarcode(true);
+    setBarcodeSearchError("");
+
+    try {
+      // مصدر المنتج الأساسي هو قاعدة البيانات فقط، بدون أي كتالوج محلي أو LEGACY.
+      const result = await sendHttpReq(
+        `manufacturing-cost/product/${encodeURIComponent(searchValue)}`,
+      );
+
+      if (result?.success === false) {
+        throw new Error(result?.message || "لم يتم العثور على المنتج.");
+      }
+
+      const apiProduct =
+        result?.product || result?.data?.product || result?.data || null;
+
+      if (!apiProduct || typeof apiProduct !== "object") {
+        throw new Error("السيرفر لم يُرجع بيانات المنتج.");
+      }
+
+      const barcode = normalizeProductBarcode(
+        apiProduct.barcode ||
+          apiProduct.itemean ||
+          apiProduct.id ||
+          searchValue,
+      );
+      const name = String(
+        apiProduct.name ||
+          apiProduct.productName ||
+          apiProduct.product_name ||
+          apiProduct.a_name ||
+          "",
+      ).trim();
+
+      if (!barcode || !name) {
+        throw new Error("بيانات المنتج لا تحتوي على باركود واسم صالحين.");
+      }
+
+      const itemean = String(apiProduct.itemean ?? "").trim();
+      // طابق المنتج مع كتالوج الدواجن بأكثر من مفتاح؛ بعض مصادر البيانات
+      // تحفظ id كـ itemean وليس كـ barcode.
+      const catalogPoultryProduct = (poultryCatalog || []).find((item) => {
+        const catalogBarcode = String(item?.barcode ?? "").trim();
+        const catalogId = String(item?.id ?? "").trim();
+        const catalogItean = String(item?.itemean ?? "").trim();
+        const catalogCode = String(item?.code ?? "").trim();
+        const catalogName = normalizeSupplierName(
+          item?.name || item?.a_name || "",
+        );
+        const targetName = normalizeSupplierName(name);
+
+        return (
+          (barcode &&
+            [catalogBarcode, catalogId, catalogCode].includes(barcode)) ||
+          (itemean &&
+            [catalogItean, catalogId, catalogCode].includes(itemean)) ||
+          (targetName && catalogName && targetName === catalogName)
+        );
+      });
+
+      const rawType = String(
+        apiProduct.poultryType ||
+          apiProduct.poultry_type ||
+          apiProduct.type ||
+          apiProduct.productType ||
+          apiProduct.product_type ||
+          "",
+      )
+        .trim()
+        .toLowerCase();
+      const poultryName = normalizeSupplierName(name);
+      const hasPoultryName = /دجاج|دواجن|فراخ|كبد وقوانص|قوانص/.test(
+        poultryName,
+      );
+      const truthyPoultryFlag = [
+        apiProduct.isPoultry,
+        apiProduct.is_poultry,
+        apiProduct.isPoultryProduct,
+      ].some(
+        (value) =>
+          value === true || value === 1 || value === "1" || value === "true",
+      );
+      const isPoultry =
+        Boolean(catalogPoultryProduct) ||
+        truthyPoultryFlag ||
+        hasPoultryName ||
+        [
+          "white",
+          "baladi",
+          "balady",
+          "دواجن",
+          "دواجن بيضاء",
+          "دواجن بلدي",
+        ].includes(rawType);
+
+      const selectedProduct = {
+        ...(catalogPoultryProduct || {}),
+        ...apiProduct,
+        id: barcode,
+        barcode,
+        itemean,
+        name,
+        suppliers:
+          Array.isArray(apiProduct.suppliers) && apiProduct.suppliers.length
+            ? apiProduct.suppliers
+            : catalogPoultryProduct?.suppliers || [],
+        supplierIds:
+          Array.isArray(apiProduct.supplierIds) && apiProduct.supplierIds.length
+            ? apiProduct.supplierIds
+            : catalogPoultryProduct?.supplierIds || [],
+      };
+
+      const material = isPoultry
+        ? toPoultryMaterial({ ...selectedProduct, isPoultry: true })
+        : {
+            ...selectedProduct,
+            id: barcode,
+            barcode,
+            itemean,
+            name,
+            unit: String(
+              apiProduct.unitName ||
+                apiProduct.unit ||
+                apiProduct.uom ||
+                apiProduct.unit_name ||
+                "قطعة",
+            ).trim(),
+            pricePerKg: apiProduct.pricePerKg,
+            isPoultry: false,
+          };
+
+      if (!material?.id || !material?.name) {
+        throw new Error("تعذر تجهيز بيانات المنتج الأساسي.");
+      }
+
+      // لا نضيف المنتج مباشرة: نعرض أولاً خانة كمية واضحة داخل الصفحة.
+      setPendingBaseProduct({ material, isPoultry, barcode, name });
+      setBaseProductQuantity("1");
+      setBaseProductId("");
+      setBaseProductName(name);
+      setBaseProductSearch(`${name} - ${barcode}`);
+    } catch (error) {
+      console.error("Base product lookup failed:", error);
+      setBarcodeSearchError(error?.message || "حدث خطأ أثناء البحث عن المنتج.");
+    } finally {
+      setIsSearchingBarcode(false);
+    }
+  };
+
+  const confirmBaseProduct = () => {
+    if (!pendingBaseProduct) return;
+
+    const requestedQuantity = Number(
+      String(baseProductQuantity).trim().replace(",", "."),
+    );
+    if (!Number.isFinite(requestedQuantity) || requestedQuantity <= 0) {
+      setBarcodeSearchError("أدخل كمية صحيحة أكبر من صفر.");
+      return;
+    }
+
+    const { material, isPoultry, barcode, name } = pendingBaseProduct;
+    const draft = {
+      ...getDraftForMaterial(material),
+      catalogId: String(material.id),
+      quantity: String(requestedQuantity),
+      unit: isPoultry ? "كيلو" : material.unit || "قطعة",
+      poultryType: isPoultry ? material.poultryType || "white" : undefined,
+      isBaseProduct: true,
+    };
+
+    const baseIngredient = createIngredient(draft, costDate, material);
+    if (!baseIngredient) {
+      setBarcodeSearchError("تعذر إضافة المنتج الأساسي إلى جدول التكلفة.");
+      return;
+    }
+    if (baseIngredient.error) {
+      setBarcodeSearchError(baseIngredient.error);
+      return;
+    }
+
+    setBaseProductId(barcode);
+    setBaseProductName(name);
+    setBaseProductSearch(`${name} - ${barcode}`);
+    setIngredients((previous) => [
+      { ...baseIngredient, isBaseProduct: true },
+      ...previous.filter((item) => !item.isBaseProduct),
+    ]);
+    setPendingBaseProduct(null);
+    setBarcodeSearchError("");
+  };
+
+  const cancelBaseProductSelection = () => {
+    setPendingBaseProduct(null);
+    setBaseProductQuantity("1");
+    setBaseProductId("");
+    setBaseProductName("");
+    setBaseProductSearch("");
+  };
 
   const addIngredient = () => {
     if (!ingredientDraft.catalogId) {
@@ -1702,13 +2036,21 @@ function ManufacturingCost() {
     resetIngredientDraft();
   };
 
-  const removeIngredient = (id) => {
+  const removeIngredient = (id, { preserveBaseSelection = false } = {}) => {
+    const removedIngredient = ingredients.find((item) => item.id === id);
+
+    if (removedIngredient?.isBaseProduct && !preserveBaseSelection) {
+      setBaseProductId("");
+      setBaseProductName("");
+      setBaseProductSearch("");
+    }
+
     setIngredients((prev) => prev.filter((item) => item.id !== id));
   };
 
   const editIngredient = (item) => {
-    const material = DEMO_RAW_MATERIALS.find(
-      (entry) => entry.id === Number(item.ingredientProductId),
+    const material = rawMaterials.find(
+      (entry) => String(entry.id) === String(item.ingredientProductId),
     );
 
     setIngredientDraft({
@@ -1718,6 +2060,7 @@ function ManufacturingCost() {
       unit: item.unit,
       supplierId: item.supplierId || "",
       poultryType: item.poultryType || "white",
+      isBaseProduct: Boolean(item.isBaseProduct),
 
       calculationType: item.calculationType || "weight",
       packageSize: item.packageSize ?? "",
@@ -1728,7 +2071,7 @@ function ManufacturingCost() {
       pieceWeightUnit: item.pieceWeightUnit || "جرام",
     });
 
-    removeIngredient(item.id);
+    removeIngredient(item.id, { preserveBaseSelection: true });
 
     window.scrollTo({ top: 300, behavior: "smooth" });
   };
@@ -1772,7 +2115,8 @@ function ManufacturingCost() {
       {
         id: editingId ?? Date.now(),
         name: productName.trim(),
-        baseProductId: Number(baseProductId),
+        baseProductId: String(baseProductId),
+        baseProductName: baseProductName || baseProductSearch,
         costDate,
         createdAt: existingProduct?.createdAt || new Date().toISOString(),
       },
@@ -1796,13 +2140,17 @@ function ManufacturingCost() {
     setEditingId(product.id);
     setProductName(product.name);
 
-    setBaseProductId(
-      product.baseProductId ? String(product.baseProductId) : "",
+    const savedBaseBarcode = String(product.baseProductId || "");
+    const savedBaseName = String(product.baseProductName || "");
+    setBaseProductId(savedBaseBarcode);
+    setBaseProductName(savedBaseName);
+    setBaseProductSearch(
+      savedBaseName
+        ? `${savedBaseName} - ${savedBaseBarcode}`
+        : savedBaseBarcode,
     );
 
-    setIngredients(
-      (product.ingredients || []).map((item) => ({ ...item })),
-    );
+    setIngredients((product.ingredients || []).map((item) => ({ ...item })));
 
     setCostDate(product.costDate || getTodayDate());
 
@@ -1877,8 +2225,8 @@ function ManufacturingCost() {
   };
 
   const editDetailIngredient = (item) => {
-    const material = DEMO_RAW_MATERIALS.find(
-      (entry) => entry.id === Number(item.ingredientProductId),
+    const material = rawMaterials.find(
+      (entry) => String(entry.id) === String(item.ingredientProductId),
     );
 
     setEditingIngredientId(item.id);
@@ -1989,7 +2337,8 @@ function ManufacturingCost() {
                 </h1>
 
                 <p className="mt-2 text-sm text-slate-500">
-                  حساب تكلفة المنتجات المصنعة بناءً على أسعار الخامات والكميات المستخدمة
+                  حساب تكلفة المنتجات المصنعة بناءً على أسعار الخامات والكميات
+                  المستخدمة
                 </p>
               </div>
             </div>
@@ -2015,8 +2364,8 @@ function ManufacturingCost() {
 
               <p className="mt-1 text-sm text-blue-700">
                 تكلفة خامة الدواجن = سعر المورد من البورصة × أعلى معامل ساري
-                للمورد في جميع الفروع × الكمية بالكيلو. السعر المعدل للمورد
-                يحل محل السعر الأساسي عند وجوده.
+                للمورد في جميع الفروع × الكمية بالكيلو. السعر المعدل للمورد يحل
+                محل السعر الأساسي عند وجوده.
               </p>
             </div>
           </div>
@@ -2106,23 +2455,104 @@ function ManufacturingCost() {
                     المنتج الأساسي المرتبط
                   </label>
 
-                  <select
-                    value={baseProductId}
-                    onChange={(event) => setBaseProductId(event.target.value)}
-                    className={inputClass}
-                    required
-                  >
-                    <option value="">اختر المنتج الأساسي</option>
+                  <div className="relative">
+                    <div className="flex gap-2">
+                      <input
+                        value={baseProductSearch}
+                        onChange={(event) => {
+                          setBaseProductSearch(event.target.value);
+                          setBaseProductId("");
+                          setBaseProductName("");
+                          setPendingBaseProduct(null);
+                          setBarcodeSearchError("");
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && !baseProductId) {
+                            event.preventDefault();
+                            selectBaseProduct();
+                          }
+                        }}
+                        placeholder="اكتب باركود المنتج الأساسي..."
+                        className={`${inputClass} min-w-0 flex-1`}
+                        autoComplete="off"
+                        required
+                      />
 
-                    {BASE_PRODUCTS.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {product.name}
-                      </option>
-                    ))}
-                  </select>
+                      <button
+                        type="button"
+                        onClick={() => selectBaseProduct()}
+                        disabled={
+                          isSearchingBarcode || !baseProductSearch.trim()
+                        }
+                        className="shrink-0 rounded-xl bg-orange-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                      >
+                        {isSearchingBarcode ? "جاري البحث..." : "بحث"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {isSearchingBarcode && (
+                    <p className="mt-2 text-sm font-semibold text-orange-600">
+                      جاري البحث عن المنتج...
+                    </p>
+                  )}
+
+                  {pendingBaseProduct && (
+                    <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50 p-4">
+                      <p className="mb-2 text-sm font-bold text-slate-800">
+                        {pendingBaseProduct.name}
+                      </p>
+                      <label className="mb-2 block text-sm font-bold text-slate-700">
+                        {pendingBaseProduct.isPoultry
+                          ? "الكمية المطلوبة بالكيلو"
+                          : `الكمية المطلوبة (${pendingBaseProduct.material.unit || "وحدة"})`}
+                      </label>
+                      <input
+                        type="number"
+                        min="0.001"
+                        step="0.001"
+                        inputMode="decimal"
+                        value={baseProductQuantity}
+                        onChange={(event) =>
+                          setBaseProductQuantity(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            confirmBaseProduct();
+                          }
+                        }}
+                        className={inputClass}
+                        placeholder="مثال: 1.5 أو 2"
+                        autoFocus
+                      />
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={confirmBaseProduct}
+                          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700"
+                        >
+                          تأكيد وإضافة للجدول
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelBaseProductSelection}
+                          className="rounded-lg bg-white px-4 py-2 text-sm font-bold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
+                        >
+                          إلغاء
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {barcodeSearchError && (
+                    <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
+                      {barcodeSearchError}
+                    </p>
+                  )}
 
                   <p className="mt-2 text-xs text-slate-400">
-                    سيتم استخدام هامش ربح هذا المنتج لحساب أسعار بيع المصنع.
+                    بعد البحث، حدد الكمية واضغط «تأكيد وإضافة للجدول».
                   </p>
                 </div>
 
@@ -2155,7 +2585,8 @@ function ManufacturingCost() {
                     </h3>
 
                     <p className="mt-1 text-xs text-slate-500">
-                      اختر طريقة حساب الخامة، ثم أدخل بيانات العبوة والكمية المستخدمة
+                      اختر طريقة حساب الخامة، ثم أدخل بيانات العبوة والكمية
+                      المستخدمة
                     </p>
                   </div>
                 </div>
@@ -2197,15 +2628,33 @@ function ManufacturingCost() {
                   <table className="w-full min-w-262.5 border-separate border-spacing-0 text-right">
                     <thead>
                       <tr className="bg-slate-800 text-white">
-                        <th className="whitespace-nowrap px-4 py-3 text-sm">#</th>
-                        <th className="whitespace-nowrap px-4 py-3 text-sm">اسم الخامة</th>
-                        <th className="whitespace-nowrap px-4 py-3 text-sm">المورد / المصدر</th>
-                        <th className="whitespace-nowrap px-4 py-3 text-sm">نوع البورصة</th>
-                        <th className="whitespace-nowrap px-4 py-3 text-sm">سعر الشراء</th>
-                        <th className="whitespace-nowrap px-4 py-3 text-sm">الكمية</th>
-                        <th className="whitespace-nowrap px-4 py-3 text-sm">الوحدة</th>
-                        <th className="whitespace-nowrap px-4 py-3 text-sm">التكلفة</th>
-                        <th className="whitespace-nowrap px-4 py-3 text-center text-sm">الإجراءات</th>
+                        <th className="whitespace-nowrap px-4 py-3 text-sm">
+                          #
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-3 text-sm">
+                          اسم الخامة
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-3 text-sm">
+                          المورد / المصدر
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-3 text-sm">
+                          نوع البورصة
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-3 text-sm">
+                          سعر الشراء
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-3 text-sm">
+                          الكمية
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-3 text-sm">
+                          الوحدة
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-3 text-sm">
+                          التكلفة
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-3 text-center text-sm">
+                          الإجراءات
+                        </th>
                       </tr>
                     </thead>
 
@@ -2220,7 +2669,12 @@ function ManufacturingCost() {
                           </td>
 
                           <td className="border-b border-slate-100 px-4 py-4 font-bold text-slate-800">
-                            {item.name}
+                            <div>{item.name}</div>
+                            {item.isBaseProduct && (
+                              <span className="mt-1 inline-flex rounded-md bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700">
+                                المنتج الأساسي
+                              </span>
+                            )}
                           </td>
 
                           <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
@@ -2232,7 +2686,8 @@ function ManufacturingCost() {
                           </td>
 
                           <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
-                            {money(item.unitPrice)} جنيه / {item.priceUnit || "وحدة"}
+                            {money(item.unitPrice)} جنيه /{" "}
+                            {item.priceUnit || "وحدة"}
                           </td>
 
                           <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
@@ -2426,24 +2881,35 @@ function ManufacturingCost() {
                 <thead>
                   <tr className="bg-slate-800 text-white">
                     <th className="whitespace-nowrap px-4 py-4 text-sm">#</th>
-                    <th className="whitespace-nowrap px-4 py-4 text-sm">اسم المنتج</th>
-                    <th className="whitespace-nowrap px-4 py-4 text-sm">المنتج الأساسي</th>
-                    <th className="whitespace-nowrap px-4 py-4 text-sm">تاريخ التكلفة</th>
-                    <th className="whitespace-nowrap px-4 py-4 text-sm">عدد المكونات</th>
-                    <th className="whitespace-nowrap px-4 py-4 text-sm">إجمالي الكمية</th>
-                    <th className="whitespace-nowrap px-4 py-4 text-sm">إجمالي التكلفة</th>
-                    <th className="whitespace-nowrap px-4 py-4 text-sm">تكلفة الكيلو</th>
-                    <th className="whitespace-nowrap px-4 py-4 text-center text-sm">الإجراءات</th>
+                    <th className="whitespace-nowrap px-4 py-4 text-sm">
+                      اسم المنتج
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-sm">
+                      المنتج الأساسي
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-sm">
+                      تاريخ التكلفة
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-sm">
+                      عدد المكونات
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-sm">
+                      إجمالي الكمية
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-sm">
+                      إجمالي التكلفة
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-sm">
+                      تكلفة الكيلو
+                    </th>
+                    <th className="whitespace-nowrap px-4 py-4 text-center text-sm">
+                      الإجراءات
+                    </th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {filteredProducts.map((item, index) => {
-                    const baseProduct = BASE_PRODUCTS.find(
-                      (product) =>
-                        Number(product.id) === Number(item.baseProductId),
-                    );
-
                     return (
                       <tr
                         key={item.id}
@@ -2458,7 +2924,9 @@ function ManufacturingCost() {
                         </td>
 
                         <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
-                          {baseProduct?.name || "غير محدد"}
+                          {item.baseProductName ||
+                            item.baseProductId ||
+                            "غير محدد"}
                         </td>
 
                         <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
@@ -2542,7 +3010,8 @@ function ManufacturingCost() {
             </div>
 
             <div className="border-t border-slate-100 bg-slate-50 px-5 py-4 text-xs text-slate-400 md:px-7">
-              بيانات المنتجات محفوظة في التخزين المشترك مع بيانات البورصة ومعاملات الموردين.
+              بيانات المنتجات محفوظة في التخزين المشترك مع بيانات البورصة
+              ومعاملات الموردين.
             </div>
           </section>
         </div>
@@ -2642,10 +3111,9 @@ function ManufacturingCost() {
                 </p>
 
                 <p className="mt-2 font-extrabold text-indigo-900">
-                  {BASE_PRODUCTS.find(
-                    (product) =>
-                      Number(product.id) === Number(selectedProduct.baseProductId),
-                  )?.name || "غير محدد"}
+                  {selectedProduct.baseProductName ||
+                    selectedProduct.baseProductId ||
+                    "غير محدد"}
                 </p>
               </div>
 
@@ -2720,79 +3188,102 @@ function ManufacturingCost() {
                   <table className="w-full min-w-250 border-separate border-spacing-0 text-right">
                     <thead>
                       <tr className="bg-slate-800 text-white">
-                        <th className="whitespace-nowrap px-4 py-4 text-sm">#</th>
-                        <th className="whitespace-nowrap px-4 py-4 text-sm">اسم الخامة</th>
-                        <th className="whitespace-nowrap px-4 py-4 text-sm">المورد / المصدر</th>
-                        <th className="whitespace-nowrap px-4 py-4 text-sm">نوع البورصة</th>
-                        <th className="whitespace-nowrap px-4 py-4 text-sm">سعر الوحدة</th>
-                        <th className="whitespace-nowrap px-4 py-4 text-sm">الكمية</th>
-                        <th className="whitespace-nowrap px-4 py-4 text-sm">الوحدة</th>
-                        <th className="whitespace-nowrap px-4 py-4 text-sm">إجمالي التكلفة</th>
-                        <th className="whitespace-nowrap px-4 py-4 text-center text-sm">الإجراءات</th>
+                        <th className="whitespace-nowrap px-4 py-4 text-sm">
+                          #
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-4 text-sm">
+                          اسم الخامة
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-4 text-sm">
+                          المورد / المصدر
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-4 text-sm">
+                          نوع البورصة
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-4 text-sm">
+                          سعر الوحدة
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-4 text-sm">
+                          الكمية
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-4 text-sm">
+                          الوحدة
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-4 text-sm">
+                          إجمالي التكلفة
+                        </th>
+                        <th className="whitespace-nowrap px-4 py-4 text-center text-sm">
+                          الإجراءات
+                        </th>
                       </tr>
                     </thead>
 
                     <tbody>
-                      {(selectedProduct.ingredients || []).map((item, index) => (
-                        <tr
-                          key={item.id}
-                          className="transition hover:bg-orange-50/50"
-                        >
-                          <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-400">
-                            {index + 1}
-                          </td>
+                      {(selectedProduct.ingredients || []).map(
+                        (item, index) => (
+                          <tr
+                            key={item.id}
+                            className="transition hover:bg-orange-50/50"
+                          >
+                            <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-400">
+                              {index + 1}
+                            </td>
 
-                          <td className="border-b border-slate-100 px-4 py-4 font-bold text-slate-800">
-                            {item.name}
-                          </td>
+                            <td className="border-b border-slate-100 px-4 py-4 font-bold text-slate-800">
+                              {item.name}
+                            </td>
 
-                          <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
-                            {item.supplierName || item.priceSource || "—"}
-                          </td>
+                            <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
+                              {item.supplierName || item.priceSource || "—"}
+                            </td>
 
-                          <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
-                            {item.poultryTypeLabel || "—"}
-                          </td>
+                            <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
+                              {item.poultryTypeLabel || "—"}
+                            </td>
 
-                          <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
-                            {money(item.unitPrice)} جنيه / {item.priceUnit || "وحدة"}
-                          </td>
+                            <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
+                              {money(item.unitPrice)} جنيه /{" "}
+                              {item.priceUnit || "وحدة"}
+                            </td>
 
-                          <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
-                            {item.quantity}
-                          </td>
+                            <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
+                              {item.quantity}
+                            </td>
 
-                          <td className="border-b border-slate-100 px-4 py-4">
-                            <span className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700">
-                              {item.unit}
-                            </span>
-                          </td>
+                            <td className="border-b border-slate-100 px-4 py-4">
+                              <span className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700">
+                                {item.unit}
+                              </span>
+                            </td>
 
-                          <td className="border-b border-slate-100 px-4 py-4 text-sm font-extrabold text-green-700">
-                            {money(item.totalCost)} جنيه
-                          </td>
+                            <td className="border-b border-slate-100 px-4 py-4 text-sm font-extrabold text-green-700">
+                              {money(item.totalCost)} جنيه
+                            </td>
 
-                          <td className="border-b border-slate-100 px-4 py-4">
-                            <div className="flex items-center justify-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => editDetailIngredient(item)}
-                                className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"
-                              >
-                                تعديل
-                              </button>
+                            <td className="border-b border-slate-100 px-4 py-4">
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => editDetailIngredient(item)}
+                                  className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"
+                                >
+                                  تعديل
+                                </button>
 
-                              <button
-                                type="button"
-                                onClick={() => removeDetailIngredient(item.id)}
-                                className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100"
-                              >
-                                حذف
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removeDetailIngredient(item.id)
+                                  }
+                                  className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100"
+                                >
+                                  حذف
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ),
+                      )}
 
                       {(selectedProduct.ingredients || []).length === 0 && (
                         <tr>
@@ -2822,7 +3313,8 @@ function ManufacturingCost() {
                     </p>
 
                     <p className="mt-1 font-extrabold text-slate-800">
-                      {Number(selectedProduct.totalQuantityKg || 0).toFixed(3)} كيلو
+                      {Number(selectedProduct.totalQuantityKg || 0).toFixed(3)}{" "}
+                      كيلو
                     </p>
                   </div>
 
@@ -2835,7 +3327,9 @@ function ManufacturingCost() {
                   </div>
 
                   <div>
-                    <p className="text-xs text-slate-500">تكلفة الكيلو الواحد</p>
+                    <p className="text-xs text-slate-500">
+                      تكلفة الكيلو الواحد
+                    </p>
 
                     <p className="mt-1 font-extrabold text-orange-700">
                       {money(selectedProduct.costPerKg)} جنيه

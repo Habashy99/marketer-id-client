@@ -1,41 +1,107 @@
 
-export const SUPPLIERS = [
-  { id: 1, name: "مورد الإسكندرية" },
-  { id: 2, name: "مورد النور" },
-  { id: 3, name: "مورد الصفوة" },
-  { id: 4, name: "مورد الأمل" },
-  { id: 5, name: "مورد الخير" },
-  { id: 6, name: "مورد المستقبل" },
-  { id: 7, name: "مورد الدلتا" },
-  { id: 8, name: "مورد المتحدة" },
-  { id: 9, name: "مورد السلام" },
-  { id: 10, name: "مورد المدينة" },
-];
-
 export const POULTRY_TYPES = {
   white: { label: "دواجن بيضاء" },
   baladi: { label: "دواجن بلدي" },
 };
 
-export const INITIAL_PRODUCTS = [
-  { barcode: "2302012000008", name: "دجاج بلدي فريش", type: "baladi" },
-  { barcode: "2302012000009", name: "دجاج أبيض فريش", type: "white" },
-  { barcode: "2302012000010", name: "دجاج مجمد", type: "white" },
-  { barcode: "2302012000011", name: "صدور دجاج", type: "white" },
-  { barcode: "2302009000004", name: "فيليه دجاج فريش", type: "white" },
-];
+export const normalizeProductType = (type) => {
+  const value = String(type || "").trim().toLowerCase();
 
-export const createExchange = (date) => ({
+  return value === "baladi" ||
+    value.includes("بلدي") ||
+    value.includes("balady")
+    ? "baladi"
+    : "white";
+};
+
+export const normalizeSupplier = (supplier) => {
+  if (!supplier) return null;
+
+  if (typeof supplier === "string") {
+    return {
+      supplierId: supplier,
+      supplierName: supplier,
+    };
+  }
+
+  return {
+    supplierId: String(
+      supplier.supplierId ??
+      supplier.supplier_id ??
+      supplier.id ??
+      supplier.code ??
+      "",
+    ),
+    supplierName: String(
+      supplier.supplierName ??
+      supplier.supplier_name ??
+      supplier.name ??
+      supplier.a_name ??
+      supplier.title ??
+      "",
+    ).trim(),
+  };
+};
+
+export const normalizeProductSuppliers = (product) => {
+  const suppliers =
+    product?.suppliers ??
+    product?.selectedSuppliers ??
+    product?.selected_suppliers ??
+    [];
+
+  if (!Array.isArray(suppliers)) return [];
+
+  return suppliers
+    .map(normalizeSupplier)
+    .filter((supplier) => supplier?.supplierId && supplier?.supplierName);
+};
+
+export const normalizeProduct = (product) => ({
+  ...product,
+  barcode: String(product?.barcode ?? "").trim(),
+  name: String(product?.name ?? product?.a_name ?? ""),
+  itemean: product?.itemean ?? "",
+  unit: product?.unit ?? null,
+  unitName: String(
+    product?.unitName ??
+    product?.unit_name ??
+    product?.unitLabel ??
+    product?.unit_label ??
+    (typeof product?.unit === "object"
+      ? product.unit.a_name ?? product.unit.name
+      : "") ??
+    "",
+  ),
+  type: normalizeProductType(product?.type),
+  suppliers: normalizeProductSuppliers(product),
+});
+
+export const createExchange = (date, createdBy = "غير محدد") => ({
+  id: `exchange-${date}`,
   date,
   whitePrice: "",
   baladiPrice: "",
-  supplierPrices: {},
+  status: "active",
+  createdBy,
+  createdAt: new Date().toISOString(),
+  products: [],
 });
 
-export const createProduct = (product) => ({
-  id: `${product.barcode}-${Date.now()}-${Math.random()}`,
-  barcode: product.barcode,
-  name: product.name,
-  type: product.type || "white",
-  supplierId: product.supplierId || "",
-});
+export const createProduct = (product) => {
+  const normalized = normalizeProduct(product);
+
+  return {
+    id: `product-${normalized.barcode}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`,
+    barcode: normalized.barcode,
+    itemean: normalized.itemean,
+    name: normalized.name,
+    unit: normalized.unit,
+    unitName: normalized.unitName,
+    type: normalized.type,
+    suppliers: normalized.suppliers,
+    createdAt: new Date().toISOString(),
+  };
+};

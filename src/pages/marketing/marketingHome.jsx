@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -47,6 +46,31 @@ const marketingSections = [
     description: "إدارة بيانات المنسقين المؤقتين وفترات عملهم",
     path: "/marketing/temporary-coordinators",
     parentPermission: 27,
+  },
+  {
+    title: "نظام التذوقات",
+    description: "إدارة التذوقات والشركات والصور والقيم الغذائية اليومية",
+    path: "/marketing/tastings",
+    parentPermission: 42,
+  },
+  {
+    title: "نظام الإيفينتات",
+    description: "إدارة الإيفينتات والشركات والفروع والبونص والهدايا والأذونات",
+    path: "/marketing/events",
+    parentPermission: 49,
+  },
+  {
+    title: "نظام مواعيد الشركات",
+    description:
+      "إدارة جداول نزول الشركات حسب الأماكن والأيام والفروع مع التكرار الأسبوعي",
+    path: "/marketing/company-schedules",
+    parentPermission: 50,
+  },
+  {
+    title: "نظام تصميم الباكيات والرفوف",
+    description: "تصميم الباكيات وتوزيع الشركات ونسب المساحات على الرفوف",
+    path: "/marketing/shelf-planogram",
+    parentPermission: 51,
   },
 ];
 
@@ -151,8 +175,7 @@ function MarketingHome() {
 
         if (!response?.stats) {
           throw new Error(
-            response?.message ||
-              "استجابة السيرفر لا تحتوي على الإحصائيات.",
+            response?.message || "استجابة السيرفر لا تحتوي على الإحصائيات.",
           );
         }
 
@@ -204,9 +227,7 @@ function MarketingHome() {
     } catch (err) {
       console.error("Failed to load conduct records:", err);
 
-      setRecordsError(
-        err.message || "حدث خطأ أثناء تحميل البيانات.",
-      );
+      setRecordsError(err.message || "حدث خطأ أثناء تحميل البيانات.");
     } finally {
       setRecordsLoading(false);
     }
@@ -262,7 +283,6 @@ function MarketingHome() {
 
       <main dir="rtl" className="min-h-screen bg-slate-100 p-4 sm:p-8">
         <div className="mx-auto max-w-6xl">
-
           {/* Page Header */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -299,9 +319,7 @@ function MarketingHome() {
                       {section.title}
                     </h2>
 
-                    <p className="mt-3 text-gray-600">
-                      {section.description}
-                    </p>
+                    <p className="mt-3 text-gray-600">{section.description}</p>
                   </button>
                 ))}
               </div>
@@ -402,76 +420,68 @@ function MarketingHome() {
               )}
 
               {recordsError && (
-                <p className="p-6 text-center text-red-600">
-                  {recordsError}
+                <p className="p-6 text-center text-red-600">{recordsError}</p>
+              )}
+
+              {!recordsLoading && !recordsError && records.length === 0 && (
+                <p className="p-8 text-center text-slate-500">
+                  لا توجد بيانات في هذه الفئة.
                 </p>
               )}
 
-              {!recordsLoading &&
-                !recordsError &&
-                records.length === 0 && (
-                  <p className="p-8 text-center text-slate-500">
-                    لا توجد بيانات في هذه الفئة.
-                  </p>
-                )}
+              {!recordsLoading && !recordsError && records.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-225 text-right text-sm">
+                    <thead className="bg-slate-100 text-slate-700">
+                      <tr>
+                        <th className="px-4 py-3">الكود</th>
+                        <th className="px-4 py-3">الاسم</th>
+                        <th className="px-4 py-3">الوظيفة</th>
+                        <th className="px-4 py-3">الشركة</th>
+                        <th className="px-4 py-3">الحالة</th>
+                        <th className="px-4 py-3">انتهاء الشهادة الصحية</th>
+                      </tr>
+                    </thead>
 
-              {!recordsLoading &&
-                !recordsError &&
-                records.length > 0 && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-225 text-right text-sm">
-                      <thead className="bg-slate-100 text-slate-700">
-                        <tr>
-                          <th className="px-4 py-3">الكود</th>
-                          <th className="px-4 py-3">الاسم</th>
-                          <th className="px-4 py-3">الوظيفة</th>
-                          <th className="px-4 py-3">الشركة</th>
-                          <th className="px-4 py-3">الحالة</th>
-                          <th className="px-4 py-3">
-                            انتهاء الشهادة الصحية
-                          </th>
+                    <tbody className="divide-y divide-slate-100">
+                      {records.map((record) => (
+                        <tr
+                          key={record.id}
+                          className="transition hover:bg-orange-50"
+                        >
+                          <td className="whitespace-nowrap px-4 py-3">
+                            {record.code ?? "-"}
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-800">
+                            {record.name ?? "-"}
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-3">
+                            {record.job ?? "-"}
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-3">
+                            {record.company_name ?? "-"}
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-3">
+                            {record.states ?? "-"}
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-3">
+                            {record.health_certificate_expiry_date
+                              ? new Date(
+                                  record.health_certificate_expiry_date,
+                                ).toLocaleDateString("en-GB")
+                              : "-"}
+                          </td>
                         </tr>
-                      </thead>
-
-                      <tbody className="divide-y divide-slate-100">
-                        {records.map((record) => (
-                          <tr
-                            key={record.id}
-                            className="transition hover:bg-orange-50"
-                          >
-                            <td className="whitespace-nowrap px-4 py-3">
-                              {record.code ?? "-"}
-                            </td>
-
-                            <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-800">
-                              {record.name ?? "-"}
-                            </td>
-
-                            <td className="whitespace-nowrap px-4 py-3">
-                              {record.job ?? "-"}
-                            </td>
-
-                            <td className="whitespace-nowrap px-4 py-3">
-                              {record.company_name ?? "-"}
-                            </td>
-
-                            <td className="whitespace-nowrap px-4 py-3">
-                              {record.states ?? "-"}
-                            </td>
-
-                            <td className="whitespace-nowrap px-4 py-3">
-                              {record.health_certificate_expiry_date
-                                ? new Date(
-                                    record.health_certificate_expiry_date,
-                                  ).toLocaleDateString("en-GB")
-                                : "-"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
           )}
         </div>

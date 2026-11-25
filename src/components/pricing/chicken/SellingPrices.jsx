@@ -1,77 +1,266 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../../header.jsx";
-import { INITIAL_PRODUCTS } from "./data/constantsSupplierFactors";
-import {
-  TODAY,
-  INITIAL_START_DATE,
-  CATEGORIES,
-  createInitialMargins,
-} from "./data/constantsSellingPrices";
+
+import { TODAY, CATEGORIES } from "./data/constantsSellingPrices";
 
 import {
   getDailyExchangeData,
   getExchangeByDate,
   getSupplierExchangePrice,
   getActiveSupplierPeriod,
+  getHighestSupplierFactor,
   getProfitMargins,
   saveProfitMargins,
 } from "./data/dailyExchangeStorage.js";
 
 /* -------------------------------------------------------------------------- */
-/* Core Products                                                              */
+/* Product Helpers                                                            */
 /* -------------------------------------------------------------------------- */
 
-const PRODUCTS = [
-  {
-    id: 1,
-    barcode: "2302012000008",
-    name: "دجاج بلدي فريش",
-    type: "baladi",
-  },
-  {
-    id: 2,
-    barcode: "2302012000009",
-    name: "دجاج أبيض فريش",
-    type: "white",
-  },
-  {
-    id: 12,
-    barcode: "2302012000010",
-    name: "دجاج مجمد",
-    type: "white",
-  },
-  {
-    id: 7,
-    barcode: "2302012000011",
-    name: "صدور دجاج",
-    type: "white",
-  },
-  {
-    id: 3,
-    barcode: "2302009000004",
-    name: "فيليه دجاج فريش",
-    type: "white",
-  },
-].map((product) => {
-  const supplierProduct = INITIAL_PRODUCTS.find(
-    (item) => Number(item.id) === Number(product.id),
+const getStableProductKey = (product) => {
+  const itemean = String(product?.itemean ?? "").trim();
+  if (itemean) return `itemean:${itemean}`;
+
+  const barcode = String(product?.barcode ?? "").trim();
+  if (barcode) return `barcode:${barcode}`;
+
+  const id = String(product?.id ?? "").trim();
+
+  if (id) {
+    return /^(itemean|barcode|legacy):/.test(id) ? id : `legacy:${id}`;
+  }
+
+  return "";
+};
+
+const getProductIdentifiers = (product) => {
+  return [
+    product?.id,
+    product?.originalId,
+    product?.itemean,
+    product?.barcode,
+    product?.code,
+    product?.key,
+  ]
+    .filter(
+      (value) =>
+        value !== undefined && value !== null && String(value).trim() !== "",
+    )
+    .map(String);
+};
+
+const productsMatch = (first, second) => {
+  const firstIds = getProductIdentifiers(first);
+  const secondIds = new Set(getProductIdentifiers(second));
+
+  return firstIds.some((id) => secondIds.has(id));
+};
+
+const marginBelongsToProduct = (margin, product) => {
+  const marginProductId = String(margin?.productId ?? "");
+
+  return getProductIdentifiers(product).some(
+    (identifier) => identifier === marginProductId,
   );
+};
+
+const normalizeProduct = (product) => {
+  const key = getStableProductKey(product);
+
+  if (!key) return null;
+
+  const rawType = String(product?.type ?? "")
+    .trim()
+    .toLowerCase();
+
+  const type =
+    rawType === "baladi" ||
+    rawType.includes("بلدي") ||
+    rawType.includes("balady")
+      ? "baladi"
+      : "white";
+
+  const supplierIds = [
+    ...(Array.isArray(product?.supplierIds) ? product.supplierIds : []),
+
+    ...(Array.isArray(product?.suppliers)
+      ? product.suppliers.map((supplier) =>
+          typeof supplier === "object"
+            ? (supplier.supplierId ?? supplier.id)
+            : supplier,
+        )
+      : []),
+  ]
+    .filter((id) => id !== undefined && id !== null && id !== "")
+    .map(String);
 
   return {
     ...product,
-    supplierIds: supplierProduct?.supplierIds || [],
+    id: key,
+    key,
+    originalId: product?.id,
+    code: String(
+      product?.itemean ||
+        product?.barcode ||
+        product?.code ||
+        product?.id ||
+        "",
+    ),
+    barcode: String(product?.barcode ?? ""),
+    itemean: String(product?.itemean ?? ""),
+    name: String(product?.name || product?.a_name || "منتج بدون اسم"),
+    type,
+    supplierIds: [...new Set(supplierIds)],
   };
-});
+};
+
+/**
+ * تجميع المنتجات الفعلية من مصادر النظام:
+ * 1. كتالوج الدواجن.
+ * 2. منتجات البورصة.
+ * 3. لقطات المنتجات المحفوظة داخل فترات الموردين.
+ *
+ * يتم دمج المنتجات باستخدام itemean أو barcode لمنع التكرار.
+ * لا يتم تعديل البيانات المحفوظة أو نقلها بين المصادر.
+ */
+const getProductsFromSystem = (data) => {
+  const catalog = Array.isArray(data?.poultryProducts)
+    ? data.poultryProducts
+    : [];
+
+  const exchangeProducts = (
+    Array.isArray(data?.exchanges) ? data.exchanges : []
+  ).flatMap((exchange) =>
+    Array.isArray(exchange?.products) ? exchange.products : [],
+  );
+
+  const suppliers = Array.isArray(data?.supplierFactors?.suppliers)
+    ? data.supplierFactors.suppliers
+    : [];
+
+  const supplierProducts = suppliers.flatMap((supplier) => {
+    const periods = Array.isArray(supplier?.periods) ? supplier.periods : [];
+
+    return periods.flatMap((period) => {
+      const snapshots = Array.isArray(period?.productsSnapshot)
+        ? period.productsSnapshot
+        : [];
+
+      return snapshots.map((product) => ({
+        ...product,
+        supplierIds: [
+          ...(Array.isArray(product?.supplierIds) ? product.supplierIds : []),
+          supplier.id,
+        ],
+      }));
+    });
+  });
+
+  // البورصة هي المصدر الأساسي عند وجود بيانات المنتج بها.
+  const allProducts = [...catalog, ...supplierProducts, ...exchangeProducts];
+
+  const productsMap = new Map();
+
+  allProducts.forEach((rawProduct) => {
+    const product = normalizeProduct(rawProduct);
+
+    if (!product) return;
+
+    const existing = productsMap.get(product.id);
+
+    if (!existing) {
+      productsMap.set(product.id, product);
+      return;
+    }
+
+    productsMap.set(product.id, {
+      ...existing,
+      ...product,
+
+      // الاحتفاظ بمعرف المنتج الأصلي إن كان متاحًا.
+      originalId: product.originalId || existing.originalId,
+
+      // دمج الموردين دون تكرار.
+      supplierIds: [
+        ...new Set([
+          ...(existing.supplierIds || []),
+          ...(product.supplierIds || []),
+        ]),
+      ],
+    });
+  });
+
+  // ربط كل منتج بجميع الموردين الذين لديهم Snapshot مطابق.
+  productsMap.forEach((product, key) => {
+    const relatedSupplierIds = new Set(product.supplierIds || []);
+
+    suppliers.forEach((supplier) => {
+      const periods = Array.isArray(supplier?.periods) ? supplier.periods : [];
+
+      const hasProduct = periods.some((period) => {
+        const snapshots = Array.isArray(period?.productsSnapshot)
+          ? period.productsSnapshot
+          : [];
+
+        return snapshots.some((snapshot) => productsMatch(product, snapshot));
+      });
+
+      if (hasProduct && supplier?.id !== undefined) {
+        relatedSupplierIds.add(String(supplier.id));
+      }
+    });
+
+    // دعم الموردين المرتبطين مباشرة بمنتج البورصة.
+    exchangeProducts.forEach((exchangeProduct) => {
+      if (!productsMatch(product, exchangeProduct)) return;
+
+      (exchangeProduct.suppliers || []).forEach((supplier) => {
+        const supplierId =
+          typeof supplier === "object"
+            ? (supplier.supplierId ?? supplier.id)
+            : supplier;
+
+        if (
+          supplierId !== undefined &&
+          supplierId !== null &&
+          supplierId !== ""
+        ) {
+          relatedSupplierIds.add(String(supplierId));
+        }
+      });
+
+      (exchangeProduct.supplierIds || []).forEach((supplierId) => {
+        if (
+          supplierId !== undefined &&
+          supplierId !== null &&
+          supplierId !== ""
+        ) {
+          relatedSupplierIds.add(String(supplierId));
+        }
+      });
+    });
+
+    productsMap.set(key, {
+      ...product,
+      supplierIds: [...relatedSupplierIds],
+    });
+  });
+
+  return [...productsMap.values()].sort((a, b) =>
+    a.name.localeCompare(b.name, "ar"),
+  );
+};
 
 /* -------------------------------------------------------------------------- */
-/* Helpers                                                                    */
+/* General Helpers                                                            */
 /* -------------------------------------------------------------------------- */
 
 const formatDate = (value) => {
   if (!value) return "-";
 
-  const [year, month, day] = value.split("-");
+  const [year, month, day] = String(value).split("-");
+
   return `${day}/${month}/${year}`;
 };
 
@@ -82,21 +271,19 @@ const money = (value) =>
   });
 
 const formatPrice = (value) =>
-  Number.isFinite(value)
-    ? Math.round(value).toLocaleString("en-US")
-    : "-";
+  Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "-";
 
 const getActivePeriod = (periods, date) =>
   periods
     .filter(
       (period) =>
-        period.startDate <= date &&
-        (!period.endDate || period.endDate >= date),
+        period.startDate <= date && (!period.endDate || period.endDate >= date),
     )
     .sort((a, b) => b.startDate.localeCompare(a.startDate))[0] || null;
 
 const getPreviousDate = (date) => {
   const value = new Date(`${date}T12:00:00`);
+
   value.setDate(value.getDate() - 1);
 
   return [
@@ -108,6 +295,7 @@ const getPreviousDate = (date) => {
 
 const getNextDate = (date) => {
   const value = new Date(`${date}T12:00:00`);
+
   value.setDate(value.getDate() + 1);
 
   return [
@@ -120,43 +308,33 @@ const getNextDate = (date) => {
 const getPeriodStatus = (period) => {
   if (period.startDate > TODAY) return "قادمة";
   if (period.endDate && period.endDate < TODAY) return "منتهية";
+
   return "مستمرة";
 };
 
 const getPeriodStatusClass = (period) => {
   const status = getPeriodStatus(period);
 
-  if (status === "قادمة") return "bg-blue-100 text-blue-700";
-  if (status === "منتهية") return "bg-slate-100 text-slate-600";
+  if (status === "قادمة") {
+    return "bg-blue-100 text-blue-700";
+  }
+
+  if (status === "منتهية") {
+    return "bg-slate-100 text-slate-600";
+  }
 
   return "bg-green-100 text-green-700";
 };
 
+const createEmptyCategoryMargins = () =>
+  Object.fromEntries(CATEGORIES.map((category) => [category, ""]));
+
+const createMarginId = () =>
+  `margin-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
 /* -------------------------------------------------------------------------- */
-/* Supplier Factor Helpers                                                    */
+/* Supplier Helpers                                                           */
 /* -------------------------------------------------------------------------- */
-
-const getHighestSupplierFactor = (period, productId, supplier) => {
-  const productFactor = Number(period?.productFactors?.[productId]);
-  const periodFactor = Number(period?.baseFactor);
-  const supplierFactor = Number(supplier?.baseFactor);
-
-  const baseFactor = [
-    productFactor,
-    periodFactor,
-    supplierFactor,
-  ].find((value) => Number.isFinite(value) && value > 0);
-
-  if (baseFactor === undefined) return null;
-
-  const branchFactors = Object.values(
-    period?.overrides?.[productId] || {},
-  )
-    .map(Number)
-    .filter((value) => Number.isFinite(value) && value > 0);
-
-  return Math.max(baseFactor, ...branchFactors);
-};
 
 const hasSupplierExchangeOverride = (exchange, supplierId, type) => {
   const value = exchange?.supplierPrices?.[supplierId]?.[type];
@@ -171,12 +349,21 @@ const hasSupplierExchangeOverride = (exchange, supplierId, type) => {
 function SellingPrices() {
   const navigate = useNavigate();
 
+  /* ---------------------------------------------------------------------- */
+  /* System Data                                                            */
+  /* ---------------------------------------------------------------------- */
+
   const [dailyData] = useState(() => getDailyExchangeData());
 
-  const products = PRODUCTS;
+  const products = useMemo(() => getProductsFromSystem(dailyData), [dailyData]);
 
-  const suppliers = dailyData.supplierFactors?.suppliers || [];
-  const exchanges = dailyData.exchanges || [];
+  const suppliers = Array.isArray(dailyData?.supplierFactors?.suppliers)
+    ? dailyData.supplierFactors.suppliers
+    : [];
+
+  const exchanges = Array.isArray(dailyData?.exchanges)
+    ? dailyData.exchanges
+    : [];
 
   /* ---------------------------------------------------------------------- */
   /* Profit Margins                                                         */
@@ -185,13 +372,7 @@ function SellingPrices() {
   const [margins, setMargins] = useState(() => {
     const savedMargins = getProfitMargins();
 
-    if (savedMargins === null) {
-      const initialMargins = createInitialMargins();
-      saveProfitMargins(initialMargins);
-      return initialMargins;
-    }
-
-    return savedMargins;
+    return Array.isArray(savedMargins) ? savedMargins : [];
   });
 
   useEffect(() => {
@@ -204,7 +385,6 @@ function SellingPrices() {
 
   const [selectedDate, setSelectedDate] = useState(TODAY);
   const [search, setSearch] = useState("");
-
   const [selectedCategory, setSelectedCategory] = useState("");
   const [showAllCategories, setShowAllCategories] = useState(false);
 
@@ -217,13 +397,11 @@ function SellingPrices() {
   const [editingId, setEditingId] = useState(null);
 
   const [historyCategory, setHistoryCategory] = useState("");
+
   const [showAllHistoryCategories, setShowAllHistoryCategories] =
-    useState(false);
+    useState(true);
 
-  const [historyStartDate, setHistoryStartDate] =
-    useState(INITIAL_START_DATE);
-
-  const [historyEndDate, setHistoryEndDate] = useState(TODAY);
+  const [historyStartDate, setHistoryStartDate] = useState(TODAY);
 
   const [reviewingHistoryId, setReviewingHistoryId] = useState(null);
 
@@ -235,7 +413,8 @@ function SellingPrices() {
     productId: "",
     category: CATEGORIES[0],
     startDate: TODAY,
-    profitMargin: "20",
+    profitMargin: "",
+    categoryMargins: createEmptyCategoryMargins(),
   });
 
   const inputClass =
@@ -273,11 +452,13 @@ function SellingPrices() {
           return null;
         }
 
-        const factor = getHighestSupplierFactor(
-          period,
-          product.id,
+        // استخدام دالة التخزين الأصلية لحساب أعلى معامل
+        // للمنتج، بما يشمل معاملات الفروع.
+        const factor = getHighestSupplierFactor({
           supplier,
-        );
+          productId: product.id,
+          date,
+        });
 
         if (factor === null) return null;
 
@@ -313,13 +494,9 @@ function SellingPrices() {
           supplierCode: supplier.code,
           factor,
           exchangePrice,
-          exchangePriceType: isOverridden
-            ? "سعر معدل"
-            : "السعر الأساسي",
+          exchangePriceType: isOverridden ? "سعر معدل" : "السعر الأساسي",
           exchangeDate: exchange.date,
           cost: calculatedCost,
-          periodStartDate: period?.startDate || null,
-          periodEndDate: period?.endDate || null,
         };
       })
       .filter(Boolean);
@@ -361,20 +538,20 @@ function SellingPrices() {
       .filter((product) => {
         if (!keyword) return true;
 
-        return `${product.barcode} ${product.name}`
+        return `${product.barcode} ${product.itemean} ${product.name} ${product.code}`
           .toLowerCase()
           .includes(keyword);
       })
       .map((product) => {
         const costInfo = getProductCost(product, selectedDate);
 
+        const productMargins = margins.filter((item) =>
+          marginBelongsToProduct(item, product),
+        );
+
         const categoryData = CATEGORIES.map((category) => {
           const period = getActivePeriod(
-            margins.filter(
-              (item) =>
-                String(item.productId) === String(product.id) &&
-                item.category === category,
-            ),
+            productMargins.filter((item) => item.category === category),
             selectedDate,
           );
 
@@ -386,15 +563,12 @@ function SellingPrices() {
               ? (cost * profitMargin) / 100
               : null;
 
-          const sellingPrice =
-            profit !== null ? Math.round(cost + profit) : null;
-
           return {
             category,
             period,
             profitMargin,
             profit,
-            sellingPrice,
+            sellingPrice: profit !== null ? Math.round(cost + profit) : null,
           };
         });
 
@@ -405,7 +579,7 @@ function SellingPrices() {
           categoryData,
         };
       });
-  }, [products, margins, search, selectedDate, dailyData]);
+  }, [products, margins, search, selectedDate, exchanges, suppliers]);
 
   /* ---------------------------------------------------------------------- */
   /* Filtered Main Table                                                    */
@@ -416,9 +590,7 @@ function SellingPrices() {
       return [];
     }
 
-    if (showAllCategories) {
-      return currentRows;
-    }
+    if (showAllCategories) return currentRows;
 
     return currentRows.map((product) => ({
       ...product,
@@ -477,44 +649,32 @@ function SellingPrices() {
 
     return margins
       .filter((item) => {
-        const product = products.find(
-          (productItem) =>
-            String(productItem.id) === String(item.productId),
+        const product = products.find((productItem) =>
+          marginBelongsToProduct(item, productItem),
         );
 
         if (!product) return false;
 
         const matchesSearch =
           !keyword ||
-          `${product.barcode} ${product.name}`
+          `${product.barcode} ${product.itemean} ${product.name} ${product.code}`
             .toLowerCase()
             .includes(keyword);
 
         const matchesCategory =
-          showAllHistoryCategories ||
-          item.category === historyCategory;
+          showAllHistoryCategories || item.category === historyCategory;
 
-        const matchesDateRange =
-          item.startDate <= historyEndDate &&
-          (!item.endDate || item.endDate >= historyStartDate);
+        const matchesStartDate = item.startDate >= historyStartDate;
 
-        return matchesSearch && matchesCategory && matchesDateRange;
+        return matchesSearch && matchesCategory && matchesStartDate;
       })
       .map((item) => ({
         ...item,
-        product: products.find(
-          (product) => String(product.id) === String(item.productId),
+        product: products.find((product) =>
+          marginBelongsToProduct(item, product),
         ),
       }))
-      .sort((a, b) => {
-        const dateCompare = b.startDate.localeCompare(a.startDate);
-
-        return (
-          dateCompare ||
-          Number(a.productId) - Number(b.productId) ||
-          a.category.localeCompare(b.category, "ar")
-        );
-      });
+      .sort((a, b) => b.startDate.localeCompare(a.startDate));
   }, [
     margins,
     products,
@@ -522,7 +682,6 @@ function SellingPrices() {
     historyCategory,
     showAllHistoryCategories,
     historyStartDate,
-    historyEndDate,
   ]);
 
   /* ---------------------------------------------------------------------- */
@@ -532,28 +691,27 @@ function SellingPrices() {
   const reviewedDetails = useMemo(() => {
     if (!reviewingHistoryId) return null;
 
-    const historyItem = margins.find(
-      (item) => item.id === reviewingHistoryId,
-    );
+    const historyItem = margins.find((item) => item.id === reviewingHistoryId);
 
     if (!historyItem) return null;
 
-    const product = products.find(
-      (item) => String(item.id) === String(historyItem.productId),
+    const product = products.find((item) =>
+      marginBelongsToProduct(historyItem, item),
     );
 
     if (!product) return null;
 
     const reviewDate = historyItem.startDate;
+
     const costInfo = getProductCost(product, reviewDate);
+
+    const productMargins = margins.filter((item) =>
+      marginBelongsToProduct(item, product),
+    );
 
     const categoryData = CATEGORIES.map((category) => {
       const period = getActivePeriod(
-        margins.filter(
-          (item) =>
-            String(item.productId) === String(product.id) &&
-            item.category === category,
-        ),
+        productMargins.filter((item) => item.category === category),
         reviewDate,
       );
 
@@ -570,8 +728,7 @@ function SellingPrices() {
         period,
         profitMargin,
         profit,
-        sellingPrice:
-          profit !== null ? Math.round(cost + profit) : null,
+        sellingPrice: profit !== null ? Math.round(cost + profit) : null,
       };
     });
 
@@ -590,20 +747,26 @@ function SellingPrices() {
   const resetForm = (date = selectedDate) => {
     setForm({
       productId: "",
-      category: CATEGORIES[0],
+      category: selectedCategory || CATEGORIES[0],
       startDate: date,
-      profitMargin: "20",
+      profitMargin: "",
+      categoryMargins: createEmptyCategoryMargins(),
     });
 
     setEditingId(null);
   };
 
-  const openAddForm = (category = CATEGORIES[0], date = selectedDate) => {
+  const openAddForm = (
+    productId = "",
+    category = selectedCategory || CATEGORIES[0],
+    date = selectedDate,
+  ) => {
     setForm({
-      productId: "",
+      productId: String(productId || ""),
       category,
       startDate: date,
-      profitMargin: "20",
+      profitMargin: "",
+      categoryMargins: createEmptyCategoryMargins(),
     });
 
     setEditingId(null);
@@ -625,6 +788,15 @@ function SellingPrices() {
       return;
     }
 
+    const relatedProduct = products.find((product) =>
+      marginBelongsToProduct(item, product),
+    );
+
+    if (!relatedProduct) {
+      alert("تعذر العثور على المنتج المرتبط بفترة هامش الربح.");
+      return;
+    }
+
     const newStartDate =
       selectedDate > item.startDate
         ? selectedDate
@@ -633,10 +805,11 @@ function SellingPrices() {
     setEditingId(item.id);
 
     setForm({
-      productId: String(item.productId),
+      productId: String(relatedProduct.id),
       category: item.category,
       startDate: newStartDate,
       profitMargin: String(item.profitMargin),
+      categoryMargins: createEmptyCategoryMargins(),
     });
 
     setShowForm(true);
@@ -654,34 +827,52 @@ function SellingPrices() {
   const handleSubmit = (event) => {
     event.preventDefault();
 
-    const profitMargin = Number(form.profitMargin);
+    const productId = String(form.productId || "").trim();
 
-    if (
-      !form.category ||
-      !form.startDate ||
-      form.profitMargin === "" ||
-      !Number.isFinite(profitMargin) ||
-      profitMargin < 0
-    ) {
-      alert("يرجى إدخال الفئة وتاريخ البداية وهامش الربح بشكل صحيح");
+    const product = products.find((item) => String(item.id) === productId);
+
+    if (!product) {
+      alert("يرجى اختيار منتج صحيح من كتالوج الدواجن.");
       return;
     }
 
+    if (!form.startDate) {
+      alert("يرجى تحديد تاريخ بداية الفترة.");
+      return;
+    }
+
+    const createPeriod = (category, profitMargin) => ({
+      id: createMarginId(),
+
+      // نفس معرف المنتج الأساسي المستخدم في ManufacturingCost.
+      // الأولوية للباركود حتى تتم المطابقة مع baseProductId.
+      productId: String(product.barcode || product.id),
+
+      category,
+      startDate: form.startDate,
+      endDate: null,
+      profitMargin,
+    });
+
     /* ------------------------------------------------------------------ */
-    /* Edit: Create a new period for one product only                     */
+    /* Edit: One category only                                             */
     /* ------------------------------------------------------------------ */
 
     if (editingId !== null) {
-      const productId = Number(form.productId);
+      const profitMargin = Number(form.profitMargin);
 
-      if (!productId) {
-        alert("الصنف المحدد غير صحيح");
+      if (
+        form.profitMargin === "" ||
+        !Number.isFinite(profitMargin) ||
+        profitMargin < 0
+      ) {
+        alert("يرجى إدخال هامش ربح صحيح.");
         return;
       }
 
       const matchingPeriods = margins.filter(
         (item) =>
-          String(item.productId) === String(productId) &&
+          marginBelongsToProduct(item, product) &&
           item.category === form.category,
       );
 
@@ -690,7 +881,7 @@ function SellingPrices() {
       );
 
       if (!editingPeriod) {
-        alert("الفترة المطلوب تعديلها غير موجودة");
+        alert("الفترة المطلوب تعديلها غير موجودة.");
         return;
       }
 
@@ -699,22 +890,18 @@ function SellingPrices() {
         return;
       }
 
+      if (form.startDate <= editingPeriod.startDate) {
+        alert(`يجب اختيار تاريخ بعد ${formatDate(editingPeriod.startDate)}.`);
+        return;
+      }
+
       const laterPeriod = matchingPeriods.find(
-        (item) =>
-          item.id !== editingId &&
-          item.startDate >= form.startDate,
+        (item) => item.id !== editingId && item.startDate >= form.startDate,
       );
 
       if (laterPeriod) {
         alert(
-          `يوجد سجل آخر يبدأ في ${formatDate(laterPeriod.startDate)} أو بعده. لا يمكن إنشاء فترة قبله.`,
-        );
-        return;
-      }
-
-      if (form.startDate <= editingPeriod.startDate) {
-        alert(
-          `يجب اختيار تاريخ بعد ${formatDate(editingPeriod.startDate)}`,
+          `يوجد سجل آخر يبدأ في ${formatDate(laterPeriod.startDate)} أو بعده.`,
         );
         return;
       }
@@ -726,31 +913,20 @@ function SellingPrices() {
           (!item.endDate || item.endDate >= form.startDate),
       );
 
-      const newPeriod = {
-        id: `margin-${productId}-${Date.now()}`,
-        productId,
-        category: form.category,
-        startDate: form.startDate,
-        endDate: null,
-        profitMargin,
-      };
+      const newPeriod = createPeriod(form.category, profitMargin);
 
       setMargins((previous) => [
         ...previous.map((item) => {
           const shouldClose =
             item.id === editingId ||
-            overlappingPeriods.some(
-              (period) => period.id === item.id,
-            );
+            overlappingPeriods.some((period) => period.id === item.id);
 
-          if (shouldClose) {
-            return {
-              ...item,
-              endDate: getPreviousDate(form.startDate),
-            };
-          }
-
-          return item;
+          return shouldClose
+            ? {
+                ...item,
+                endDate: getPreviousDate(form.startDate),
+              }
+            : item;
         }),
         newPeriod,
       ]);
@@ -762,96 +938,97 @@ function SellingPrices() {
       resetForm();
       setShowForm(false);
 
-      alert("تم إنشاء فترة هامش الربح للصنف بنجاح");
+      alert(
+        `تم إنشاء فترة جديدة للمنتج "${product.name}" في فئة "${form.category}" بنجاح.`,
+      );
 
       return;
     }
 
     /* ------------------------------------------------------------------ */
-    /* Add: Apply the margin to every product in the selected category    */
+    /* Add: All categories for one product                                */
     /* ------------------------------------------------------------------ */
 
+    const categoryValues = CATEGORIES.map((category) => ({
+      category,
+      value: form.categoryMargins?.[category] ?? "",
+    }));
+
+    const missingCategories = categoryValues.filter(
+      (item) => item.value === "",
+    );
+
+    if (missingCategories.length > 0) {
+      alert(
+        `يرجى إدخال هوامش الربح لجميع الفئات.\nالفئات الناقصة: ${missingCategories
+          .map((item) => item.category)
+          .join("، ")}`,
+      );
+      return;
+    }
+
+    const invalidCategory = categoryValues.find((item) => {
+      const value = Number(item.value);
+
+      return !Number.isFinite(value) || value < 0;
+    });
+
+    if (invalidCategory) {
+      alert(`هامش الربح في فئة "${invalidCategory.category}" غير صحيح.`);
+      return;
+    }
+
     const newPeriods = [];
-    const periodsToClose = new Set();
 
-    /*
-     * مهم:
-     * نراجع كل صنف داخل الفئة المختارة فقط.
-     * لا نلمس أي فترة تابعة لفئة أخرى.
-     *
-     * الفترة السابقة المفتوحة ليست تعارضًا.
-     * سيتم تحديد نهايتها باليوم السابق لبداية الفترة الجديدة.
-     */
-
-    for (const product of products) {
-      const productPeriods = margins.filter(
-        (item) =>
-          String(item.productId) === String(product.id) &&
-          item.category === form.category,
+    // التحقق من كل الفئات قبل إنشاء أي فترة.
+    for (const item of categoryValues) {
+      const matchingPeriods = margins.filter(
+        (period) =>
+          marginBelongsToProduct(period, product) &&
+          period.category === item.category,
       );
 
-      /*
-       * لا نسمح بإضافة فترة قبل فترة مستقبلية موجودة بالفعل،
-       * ولا نسمح بتكرار تاريخ بداية فترة موجودة.
-       */
-      const laterOrSamePeriod = productPeriods.find(
-        (item) => item.startDate >= form.startDate,
+      const laterPeriod = matchingPeriods.find(
+        (period) => period.startDate >= form.startDate,
       );
 
-      if (laterOrSamePeriod) {
+      if (laterPeriod) {
         alert(
-          `لا يمكن إضافة الفترة لجميع الأصناف. الصنف "${product.name}" لديه فترة تبدأ في ${formatDate(laterOrSamePeriod.startDate)} أو بعد تاريخ البداية المحدد.`,
+          `يوجد هامش ربح للمنتج "${product.name}" في فئة "${item.category}" يبدأ في ${formatDate(laterPeriod.startDate)} أو بعده. اختر تاريخًا مناسبًا.`,
         );
         return;
       }
 
-      /*
-       * الفترات التي تبدأ قبل الفترة الجديدة
-       * وتنتهي في تاريخ بدايتها أو بعدها، أو ليس لها نهاية،
-       * يجب إنهاؤها قبل بداية الفترة الجديدة.
-       */
-      const overlappingPreviousPeriods = productPeriods.filter(
-        (item) =>
-          item.startDate < form.startDate &&
-          (!item.endDate || item.endDate >= form.startDate),
-      );
-
-      overlappingPreviousPeriods.forEach((item) => {
-        periodsToClose.add(item.id);
-      });
-
-      newPeriods.push({
-        id: `margin-${product.id}-${Date.now()}-${newPeriods.length}`,
-        productId: product.id,
-        category: form.category,
-        startDate: form.startDate,
-        endDate: null,
-        profitMargin,
-      });
+      newPeriods.push(createPeriod(item.category, Number(item.value)));
     }
 
-    if (!newPeriods.length) {
-      alert("لا توجد أصناف لإضافة هامش الربح إليها");
-      return;
-    }
-
-    /*
-     * الحفظ يتم مرة واحدة بعد نجاح التحقق من جميع الأصناف.
-     * يتم إنهاء الفترات السابقة داخل الفئة المختارة فقط.
-     */
-    setMargins((previous) => [
-      ...previous.map((item) => {
-        if (periodsToClose.has(item.id)) {
-          return {
-            ...item,
-            endDate: getPreviousDate(form.startDate),
-          };
+    // إغلاق الفترة السابقة لكل فئة بشكل مستقل.
+    setMargins((previous) => {
+      const updatedMargins = previous.map((period) => {
+        if (!marginBelongsToProduct(period, product)) {
+          return period;
         }
 
-        return item;
-      }),
-      ...newPeriods,
-    ]);
+        const newCategoryPeriod = newPeriods.find(
+          (newPeriod) => newPeriod.category === period.category,
+        );
+
+        if (
+          !newCategoryPeriod ||
+          period.startDate >= form.startDate ||
+          (period.endDate && period.endDate < form.startDate)
+        ) {
+          return period;
+        }
+
+        return {
+          ...period,
+          endDate: getPreviousDate(form.startDate),
+        };
+      });
+
+      return [...updatedMargins, ...newPeriods];
+    });
 
     if (form.startDate <= TODAY) {
       setSelectedDate(form.startDate);
@@ -861,7 +1038,7 @@ function SellingPrices() {
     setShowForm(false);
 
     alert(
-      `تم تطبيق هامش ربح ${profitMargin}% على جميع أصناف فئة ${form.category} بنجاح.`,
+      `تم حفظ هوامش الربح لجميع الفئات (${CATEGORIES.length}) للمنتج "${product.name}" بنجاح.`,
     );
   };
 
@@ -870,7 +1047,9 @@ function SellingPrices() {
   /* ---------------------------------------------------------------------- */
 
   const deletePeriod = (id) => {
-    if (!window.confirm("هل تريد حذف فترة هامش الربح هذه؟")) return;
+    if (!window.confirm("هل تريد حذف فترة هامش الربح هذه؟")) {
+      return;
+    }
 
     setMargins((previous) => previous.filter((item) => item.id !== id));
 
@@ -892,7 +1071,7 @@ function SellingPrices() {
     {
       title: "إجمالي الأصناف",
       value: stats.products,
-      description: "عدد الأصناف الأساسية في النظام",
+      description: "عدد المنتجات الفعلية في كتالوج الدواجن",
       icon: "📦",
       color: "text-blue-700",
       bg: "bg-blue-50",
@@ -908,7 +1087,7 @@ function SellingPrices() {
     {
       title: "هوامش الربح السارية",
       value: stats.activeMargins,
-      description: "عدد هوامش الربح النشطة للفئات",
+      description: "هوامش مستقلة حسب الصنف والفئة",
       icon: "📊",
       color: "text-orange-700",
       bg: "bg-orange-50",
@@ -922,10 +1101,6 @@ function SellingPrices() {
       bg: "bg-purple-50",
     },
   ];
-
-  /* ---------------------------------------------------------------------- */
-  /* Main Table Categories                                                  */
-  /* ---------------------------------------------------------------------- */
 
   const displayedCategories = showAllCategories
     ? CATEGORIES
@@ -971,8 +1146,7 @@ function SellingPrices() {
                   </h1>
 
                   <p className="mt-2 text-sm text-slate-500">
-                    إدارة هوامش الربح وأسعار البيع حسب الصنف والفئة والفترة
-                    الزمنية.
+                    إدارة هوامش الربح وأسعار البيع بشكل مستقل لكل صنف وفئة.
                   </p>
                 </div>
               </div>
@@ -1094,6 +1268,8 @@ function SellingPrices() {
               <button
                 type="button"
                 onClick={() => {
+                  console.log("Add margin button clicked");
+
                   if (showForm) {
                     resetForm();
                     setShowForm(false);
@@ -1107,7 +1283,7 @@ function SellingPrices() {
                     : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
-                {showForm ? "× إغلاق النموذج" : "+ إضافة فترة هامش ربح"}
+                {showForm ? "× إغلاق النموذج" : "+ إضافة هوامش ربح لمنتج"}
               </button>
             </div>
 
@@ -1118,136 +1294,222 @@ function SellingPrices() {
                 <div className="mb-5">
                   <h3 className="font-extrabold text-slate-800">
                     {editingId !== null
-                      ? "إنشاء فترة جديدة لصنف محدد"
-                      : "إضافة هامش ربح لجميع أصناف الفئة"}
+                      ? "إنشاء فترة جديدة لهامش ربح"
+                      : "إضافة هوامش الربح للمنتج"}
                   </h3>
 
                   <p className="mt-1 text-xs leading-6 text-slate-500">
-                    {editingId !== null
-                      ? "سيتم إنشاء فترة جديدة لهذا الصنف فقط مع الاحتفاظ بالفترة السابقة في السجل التاريخي."
-                      : "سيتم تطبيق هامش الربح على جميع أصناف الفئة المختارة، مع الاحتفاظ بجميع الفترات السابقة في السجل التاريخي."}
+                    اختر المنتج أولًا، ثم أدخل هامش الربح لكل فئة بشكل مستقل.
+                    سيتم حفظ جميع الفئات معًا دون التأثير على المنتجات الأخرى.
                   </p>
                 </div>
 
-                <form onSubmit={handleSubmit}>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {editingId !== null && (
+                {products.length === 0 ? (
+                  <div className="rounded-xl border border-orange-200 bg-white p-5 text-sm text-orange-700">
+                    لا توجد منتجات فعلية في كتالوج الدواجن حاليًا. أضف المنتجات
+                    أولًا من إدارة قطاع الدواجن.
+                  </div>
+                ) : (
+                  <form onSubmit={handleSubmit}>
+                    <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2">
                       <div>
                         <label className="mb-2 block text-sm font-bold text-slate-700">
-                          الصنف
+                          المنتج
                         </label>
 
-                        <div className={`${inputClass} bg-slate-100`}>
-                          {products.find(
-                            (product) =>
-                              String(product.id) === String(form.productId),
-                          )?.name || "الصنف غير موجود"}
-                        </div>
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="mb-2 block text-sm font-bold text-slate-700">
-                        فئة التسعير
-                      </label>
-
-                      <select
-                        value={form.category}
-                        onChange={(event) =>
-                          setForm((previous) => ({
-                            ...previous,
-                            category: event.target.value,
-                          }))
-                        }
-                        className={inputClass}
-                        disabled={editingId !== null}
-                      >
-                        {CATEGORIES.map((category) => (
-                          <option key={category} value={category}>
-                            {category}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-bold text-slate-700">
-                        بداية الفترة
-                      </label>
-
-                      <input
-                        type="date"
-                        value={form.startDate}
-                        min={
-                          editingId !== null
-                            ? getNextDate(
-                                margins.find((item) => item.id === editingId)
-                                  ?.startDate || INITIAL_START_DATE,
-                              )
-                            : undefined
-                        }
-                        onChange={(event) =>
-                          setForm((previous) => ({
-                            ...previous,
-                            startDate: event.target.value,
-                          }))
-                        }
-                        className={inputClass}
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-bold text-slate-700">
-                        هامش الربح
-                      </label>
-
-                      <div className="relative">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={form.profitMargin}
+                        <select
+                          value={form.productId}
                           onChange={(event) =>
                             setForm((previous) => ({
                               ...previous,
-                              profitMargin: event.target.value,
+                              productId: event.target.value,
                             }))
                           }
-                          placeholder="مثال: 20"
-                          className={`${inputClass} pl-12`}
+                          className={inputClass}
+                          disabled={editingId !== null}
+                          required
+                        >
+                          <option value="">اختر المنتج</option>
+
+                          {products.map((product) => (
+                            <option key={product.id} value={product.id}>
+                              {product.name} - {product.code}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="mb-2 block text-sm font-bold text-slate-700">
+                          بداية الفترة
+                        </label>
+
+                        <input
+                          type="date"
+                          value={form.startDate}
+                          min={
+                            editingId !== null
+                              ? getNextDate(
+                                  margins.find((item) => item.id === editingId)
+                                    ?.startDate || TODAY,
+                                )
+                              : undefined
+                          }
+                          onChange={(event) =>
+                            setForm((previous) => ({
+                              ...previous,
+                              startDate: event.target.value,
+                            }))
+                          }
+                          className={inputClass}
                           required
                         />
-
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-slate-400">
-                          %
-                        </span>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    <button
-                      type="submit"
-                      className={`${buttonClass} bg-orange-600 text-white hover:bg-orange-700`}
-                    >
-                      {editingId !== null
-                        ? "✓ حفظ وإنشاء فترة جديدة للصنف"
-                        : "+ تطبيق على جميع أصناف الفئة"}
-                    </button>
+                    {editingId === null ? (
+                      <>
+                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <h4 className="font-extrabold text-slate-800">
+                              هوامش الربح حسب الفئة
+                            </h4>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        resetForm();
-                        setShowForm(false);
-                      }}
-                      className={`${buttonClass} border border-slate-200 bg-white text-slate-600 hover:bg-slate-50`}
-                    >
-                      إلغاء
-                    </button>
-                  </div>
-                </form>
+                            <p className="mt-1 text-xs text-slate-500">
+                              أدخل نسبة مستقلة لكل فئة.
+                            </p>
+                          </div>
+
+                          <span className="rounded-full bg-orange-100 px-3 py-2 text-xs font-bold text-orange-700">
+                            {CATEGORIES.length} فئات
+                          </span>
+                        </div>
+
+                        {form.productId ? (
+                          <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                            المنتج المختار:{" "}
+                            <strong>
+                              {
+                                products.find(
+                                  (item) => item.id === form.productId,
+                                )?.name
+                              }
+                            </strong>
+                          </div>
+                        ) : (
+                          <div className="mb-4 rounded-xl border border-dashed border-orange-300 bg-white p-4 text-center text-sm text-orange-700">
+                            اختر المنتج من القائمة بالأعلى لبدء إدخال هوامش
+                            الفئات.
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                          {CATEGORIES.map((category, index) => (
+                            <div
+                              key={category}
+                              className="rounded-xl border border-slate-200 bg-white p-4"
+                            >
+                              <div className="mb-3 flex items-center justify-between gap-2">
+                                <label
+                                  htmlFor={`margin-${index}`}
+                                  className="text-sm font-bold text-slate-700"
+                                >
+                                  {category}
+                                </label>
+
+                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-50 text-xs font-extrabold text-orange-700">
+                                  {index + 1}
+                                </span>
+                              </div>
+
+                              <div className="relative">
+                                <input
+                                  id={`margin-${index}`}
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={form.categoryMargins?.[category] ?? ""}
+                                  onChange={(event) =>
+                                    setForm((previous) => ({
+                                      ...previous,
+                                      categoryMargins: {
+                                        ...previous.categoryMargins,
+                                        [category]: event.target.value,
+                                      },
+                                    }))
+                                  }
+                                  placeholder="مثال: 20"
+                                  className={`${inputClass} pl-12`}
+                                  required
+                                  disabled={!form.productId}
+                                />
+
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-slate-400">
+                                  %
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <div>
+                        <label className="mb-2 block text-sm font-bold text-slate-700">
+                          الفئة: {form.category}
+                        </label>
+
+                        <div className="relative max-w-md">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={form.profitMargin}
+                            onChange={(event) =>
+                              setForm((previous) => ({
+                                ...previous,
+                                profitMargin: event.target.value,
+                              }))
+                            }
+                            placeholder="مثال: 20"
+                            className={`${inputClass} pl-12`}
+                            required
+                          />
+
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-slate-400">
+                            %
+                          </span>
+                        </div>
+
+                        <p className="mt-2 text-xs text-slate-500">
+                          سيتم إنشاء فترة جديدة لهذه الفئة فقط.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      <button
+                        type="submit"
+                        disabled={!form.productId}
+                        className={`${buttonClass} bg-orange-600 text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50`}
+                      >
+                        {editingId !== null
+                          ? "✓ حفظ وإنشاء فترة جديدة"
+                          : "✓ حفظ هوامش الفئات"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetForm();
+                          setShowForm(false);
+                        }}
+                        className={`${buttonClass} border border-slate-200 bg-white text-slate-600 hover:bg-slate-50`}
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             )}
           </section>
@@ -1316,15 +1578,10 @@ function SellingPrices() {
                     <span className="ml-2 inline-block h-2.5 w-2.5 rounded-full bg-blue-500" />
                     تفاصيل التكلفة
                   </span>
-
-                  <span>
-                    <span className="ml-2 inline-block h-2.5 w-2.5 rounded-full bg-slate-400" />
-                    لا توجد فترة سارية
-                  </span>
                 </div>
 
                 <div className="w-full overflow-x-auto">
-                  <table className="min-w-375 w-full border-separate border-spacing-0 text-center text-sm">
+                  <table className="min-w-225 w-full border-separate border-spacing-0 text-center text-sm">
                     <thead>
                       <tr>
                         <th
@@ -1338,14 +1595,14 @@ function SellingPrices() {
                           rowSpan={2}
                           className="sticky right-14 z-30 min-w-32 border-b border-l border-slate-200 bg-slate-800 p-3 text-white"
                         >
-                          باركود الصنف
+                          كود المنتج
                         </th>
 
                         <th
                           rowSpan={2}
                           className="sticky right-46 z-30 min-w-56 border-b border-l border-slate-200 bg-slate-800 p-3 text-white"
                         >
-                          اسم الصنف
+                          اسم المنتج
                         </th>
 
                         <th
@@ -1386,7 +1643,7 @@ function SellingPrices() {
                           </td>
 
                           <td className="sticky right-14 z-20 border-b border-l border-slate-200 bg-white p-3 font-mono text-xs font-bold text-slate-700 group-hover:bg-slate-50">
-                            {product.barcode}
+                            {product.code || product.barcode || product.itemean}
                           </td>
 
                           <td className="sticky right-46 z-20 border-b border-l border-slate-200 bg-white p-3 text-right group-hover:bg-slate-50">
@@ -1446,13 +1703,6 @@ function SellingPrices() {
                                     </p>
 
                                     <p>
-                                      نوع سعر البورصة:{" "}
-                                      <strong>
-                                        {product.costInfo.exchangePriceType}
-                                      </strong>
-                                    </p>
-
-                                    <p>
                                       المعامل الأعلى:{" "}
                                       <strong className="text-orange-700">
                                         × {product.costInfo.factor}
@@ -1482,10 +1732,8 @@ function SellingPrices() {
                                   </summary>
 
                                   <div className="mt-2 space-y-2">
-                                    {product.costInfo.supplierCosts
-                                      .slice()
-                                      .sort((a, b) => b.cost - a.cost)
-                                      .map((supplier) => (
+                                    {product.costInfo.supplierCosts.map(
+                                      (supplier) => (
                                         <div
                                           key={supplier.supplierId}
                                           className={`rounded-md border p-2 text-[10px] ${
@@ -1519,19 +1767,15 @@ function SellingPrices() {
                                           </p>
 
                                           <p className="text-slate-500">
-                                            تاريخ البورصة:{" "}
-                                            {formatDate(supplier.exchangeDate)}
-                                          </p>
-
-                                          <p className="text-slate-500">
-                                            أعلى معامل: × {supplier.factor}
+                                            المعامل: × {supplier.factor}
                                           </p>
 
                                           <p className="mt-1 font-extrabold text-slate-800">
                                             التكلفة: {money(supplier.cost)} جنيه
                                           </p>
                                         </div>
-                                      ))}
+                                      ),
+                                    )}
                                   </div>
                                 </details>
                               </div>
@@ -1581,11 +1825,15 @@ function SellingPrices() {
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    openAddForm(item.category, selectedDate)
+                                    openAddForm(
+                                      product.id,
+                                      item.category,
+                                      selectedDate,
+                                    )
                                   }
                                   className="rounded-lg border border-dashed border-orange-300 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700 hover:bg-orange-100"
                                 >
-                                  + إضافة هامش
+                                  + إعداد هوامش المنتج
                                 </button>
                               )}
                             </td>
@@ -1599,7 +1847,7 @@ function SellingPrices() {
                             colSpan={4 + displayedCategories.length}
                             className="p-12 text-center text-slate-400"
                           >
-                            لا توجد أصناف مطابقة للبحث.
+                            لا توجد منتجات فعلية مطابقة للبحث.
                           </td>
                         </tr>
                       )}
@@ -1619,16 +1867,16 @@ function SellingPrices() {
                       <span className="mb-1 block font-bold text-blue-700">
                         01 - تحديد سعر البورصة
                       </span>
-                      يتم جلب آخر بورصة بتاريخ لا يتجاوز تاريخ التسعير. ويُستخدم
-                      السعر المعدل للمورد إن وجد، وإلا السعر الأساسي حسب نوع الصنف.
+                      يتم جلب آخر بورصة بتاريخ لا يتجاوز تاريخ التسعير، مع
+                      استخدام السعر المعدل للمورد إن وجد.
                     </div>
 
                     <div className="rounded-xl border border-slate-200 bg-white p-4">
                       <span className="mb-1 block font-bold text-orange-700">
                         02 - حساب تكلفة الموردين
                       </span>
-                      يتم اختيار أعلى معامل للمورد بين معامل الصنف ومعاملات الفروع
-                      الـ44، ثم ضربه في سعر البورصة واختيار أعلى تكلفة.
+                      يتم حساب تكلفة كل مورد حسب معامل المنتج ومعاملات الفروع،
+                      ثم اختيار أعلى تكلفة.
                     </div>
 
                     <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -1654,7 +1902,7 @@ function SellingPrices() {
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-500">
-                  جميع فترات هوامش الربح محفوظة لكل صنف وفئة.
+                  جميع فترات هوامش الربح محفوظة لكل منتج وفئة بشكل مستقل.
                 </p>
               </div>
 
@@ -1664,7 +1912,7 @@ function SellingPrices() {
                   setShowHistory((value) => {
                     if (value) {
                       setHistoryCategory("");
-                      setShowAllHistoryCategories(false);
+                      setShowAllHistoryCategories(true);
                       setReviewingHistoryId(null);
                     }
 
@@ -1679,8 +1927,6 @@ function SellingPrices() {
 
             {showHistory && (
               <div className="space-y-5 p-5 md:p-6">
-                {/* History Filters */}
-
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <div>
                     <label className="mb-2 block text-sm font-bold text-slate-700">
@@ -1690,26 +1936,8 @@ function SellingPrices() {
                     <input
                       type="date"
                       value={historyStartDate}
-                      max={historyEndDate}
                       onChange={(event) => {
                         setHistoryStartDate(event.target.value);
-                        setReviewingHistoryId(null);
-                      }}
-                      className={inputClass}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-bold text-slate-700">
-                      إلى تاريخ
-                    </label>
-
-                    <input
-                      type="date"
-                      value={historyEndDate}
-                      min={historyStartDate}
-                      onChange={(event) => {
-                        setHistoryEndDate(event.target.value);
                         setReviewingHistoryId(null);
                       }}
                       className={inputClass}
@@ -1754,12 +1982,10 @@ function SellingPrices() {
                           : "bg-orange-600 text-white hover:bg-orange-700"
                       }`}
                     >
-                      عرض كل هوامش الربح لكل الفئات
+                      عرض كل الفئات
                     </button>
                   </div>
                 </div>
-
-                {/* History Results */}
 
                 {!historyCategory && !showAllHistoryCategories ? (
                   <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
@@ -1770,8 +1996,7 @@ function SellingPrices() {
                     </p>
 
                     <p className="mt-2 text-sm text-slate-400">
-                      أو اضغط على زر عرض كل الفئات لعرض جميع السجلات خلال الفترة
-                      المحددة.
+                      أو اضغط على زر عرض كل الفئات.
                     </p>
                   </div>
                 ) : (
@@ -1785,9 +2010,8 @@ function SellingPrices() {
                         </p>
 
                         <p className="mt-1 text-xs text-slate-500">
-                          الفترة: {formatDate(historyStartDate)}
-                          {" - "}
-                          {formatDate(historyEndDate)}
+                          عرض الفترات التي تبدأ من تاريخ:{" "}
+                          {formatDate(historyStartDate)}
                         </p>
                       </div>
 
@@ -1800,7 +2024,7 @@ function SellingPrices() {
                       <table className="w-full min-w-237.5 text-right text-sm">
                         <thead className="bg-slate-800 text-white">
                           <tr>
-                            <th className="p-4">الصنف</th>
+                            <th className="p-4">المنتج</th>
                             <th className="p-4">الفئة</th>
                             <th className="p-4">بداية الفترة</th>
                             <th className="p-4">نهاية الفترة</th>
@@ -1813,8 +2037,8 @@ function SellingPrices() {
                         <tbody>
                           {history.map((item) => {
                             const status = getPeriodStatus(item);
-                            const isReviewing =
-                              reviewingHistoryId === item.id;
+
+                            const isReviewing = reviewingHistoryId === item.id;
 
                             return (
                               <Fragment key={item.id}>
@@ -1829,7 +2053,7 @@ function SellingPrices() {
                                     </div>
 
                                     <div className="mt-1 font-mono text-xs text-slate-400">
-                                      {item.product?.barcode}
+                                      {item.product?.code}
                                     </div>
                                   </td>
 
@@ -1854,13 +2078,19 @@ function SellingPrices() {
                                   </td>
 
                                   <td className="p-4">
-                                    <span
-                                      className={`rounded-full px-3 py-1 text-xs font-bold ${getPeriodStatusClass(
-                                        item,
-                                      )}`}
-                                    >
-                                      {status}
-                                    </span>
+                                    <div className="flex flex-col items-center gap-2">
+                                      <span
+                                        className={`rounded-full px-3 py-1 text-xs font-bold ${getPeriodStatusClass(item)}`}
+                                      >
+                                        {status}
+                                      </span>
+
+                                      {item.startDate > TODAY && (
+                                        <span className="whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700">
+                                          يبدأ يوم {formatDate(item.startDate)}
+                                        </span>
+                                      )}
+                                    </div>
                                   </td>
 
                                   <td className="p-4">
@@ -1884,13 +2114,13 @@ function SellingPrices() {
 
                                       <button
                                         type="button"
-                                        onClick={() => {
+                                        onClick={() =>
                                           setReviewingHistoryId((current) =>
                                             current === item.id
                                               ? null
                                               : item.id,
-                                          );
-                                        }}
+                                          )
+                                        }
                                         className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
                                           isReviewing
                                             ? "bg-orange-600 text-white"
@@ -1905,7 +2135,7 @@ function SellingPrices() {
                                   </td>
                                 </tr>
 
-                                {/* Review Details Row */}
+                                {/* Review Details */}
 
                                 {isReviewing && reviewedDetails && (
                                   <tr className="bg-blue-50/50">
@@ -1917,7 +2147,7 @@ function SellingPrices() {
                                         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                                           <div>
                                             <h3 className="text-lg font-extrabold text-slate-800">
-                                              مراجعة تفاصيل الصنف:{" "}
+                                              مراجعة المنتج:{" "}
                                               {reviewedDetails.product.name}
                                             </h3>
 
@@ -1927,7 +2157,7 @@ function SellingPrices() {
                                                 reviewedDetails.reviewDate,
                                               )}
                                               {" • "}
-                                              الفئة المحددة: {item.category}
+                                              الفئة: {item.category}
                                             </p>
                                           </div>
 
@@ -1938,8 +2168,6 @@ function SellingPrices() {
                                         </div>
 
                                         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                                          {/* Cost Details */}
-
                                           <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
                                             <h4 className="mb-3 font-extrabold text-blue-800">
                                               تفاصيل التكلفة
@@ -1986,68 +2214,23 @@ function SellingPrices() {
                                                     جنيه
                                                   </p>
 
-                                                  <div className="mt-2 space-y-1 text-xs text-slate-600">
-                                                    <p>
-                                                      المورد:{" "}
-                                                      <strong>
-                                                        {
-                                                          reviewedDetails
-                                                            .costInfo.supplier
-                                                            .name
-                                                        }
-                                                      </strong>
-                                                    </p>
+                                                  <p className="mt-2 text-xs text-slate-600">
+                                                    المورد:{" "}
+                                                    <strong>
+                                                      {
+                                                        reviewedDetails.costInfo
+                                                          .supplier.name
+                                                      }
+                                                    </strong>
+                                                  </p>
 
-                                                    <p>
-                                                      كود المورد:{" "}
-                                                      <strong>
-                                                        {
-                                                          reviewedDetails
-                                                            .costInfo.supplier
-                                                            .code
-                                                        }
-                                                      </strong>
-                                                    </p>
-
-                                                    <p>
-                                                      نوع سعر البورصة:{" "}
-                                                      <strong>
-                                                        {
-                                                          reviewedDetails
-                                                            .costInfo
-                                                            .exchangePriceType
-                                                        }
-                                                      </strong>
-                                                    </p>
-
-                                                    <p>
-                                                      المعامل الأعلى:{" "}
-                                                      <strong className="text-orange-700">
-                                                        ×{" "}
-                                                        {
-                                                          reviewedDetails
-                                                            .costInfo.factor
-                                                        }
-                                                      </strong>
-                                                    </p>
-                                                  </div>
-
-                                                  <div className="mt-3 rounded-lg bg-blue-50 p-3 text-center font-extrabold text-blue-800">
-                                                    {money(
-                                                      reviewedDetails.costInfo
-                                                        .exchangePrice,
-                                                    )}
-                                                    {" × "}
+                                                  <p className="text-xs text-slate-600">
+                                                    المعامل الأعلى: ×{" "}
                                                     {
                                                       reviewedDetails.costInfo
                                                         .factor
                                                     }
-                                                    {" = "}
-                                                    {money(
-                                                      reviewedDetails.costInfo
-                                                        .highestCost,
-                                                    )}
-                                                  </div>
+                                                  </p>
                                                 </div>
                                               </div>
                                             ) : (
@@ -2058,8 +2241,6 @@ function SellingPrices() {
                                             )}
                                           </div>
 
-                                          {/* All Suppliers */}
-
                                           <div className="rounded-xl border border-slate-200 p-4">
                                             <h4 className="mb-3 font-extrabold text-slate-800">
                                               مقارنة جميع الموردين (
@@ -2069,37 +2250,15 @@ function SellingPrices() {
                                             </h4>
 
                                             <div className="space-y-2">
-                                              {reviewedDetails.costInfo?.supplierCosts
-                                                .slice()
-                                                .sort(
-                                                  (a, b) => b.cost - a.cost,
-                                                )
-                                                .map((supplier) => (
+                                              {reviewedDetails.costInfo?.supplierCosts.map(
+                                                (supplier) => (
                                                   <div
                                                     key={supplier.supplierId}
-                                                    className={`rounded-lg border p-3 text-xs ${
-                                                      supplier.supplierId ===
-                                                      reviewedDetails.costInfo
-                                                        .supplier.id
-                                                        ? "border-green-200 bg-green-50"
-                                                        : "border-slate-200 bg-slate-50"
-                                                    }`}
+                                                    className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs"
                                                   >
-                                                    <div className="flex justify-between gap-2">
-                                                      <strong>
-                                                        {
-                                                          supplier.supplierName
-                                                        }
-                                                      </strong>
-
-                                                      {supplier.supplierId ===
-                                                        reviewedDetails.costInfo
-                                                          .supplier.id && (
-                                                        <span className="font-bold text-green-700">
-                                                          أعلى تكلفة
-                                                        </span>
-                                                      )}
-                                                    </div>
+                                                    <strong>
+                                                      {supplier.supplierName}
+                                                    </strong>
 
                                                     <p className="mt-2 text-slate-600">
                                                       سعر البورصة:{" "}
@@ -2107,20 +2266,6 @@ function SellingPrices() {
                                                         supplier.exchangePrice,
                                                       )}{" "}
                                                       جنيه
-                                                    </p>
-
-                                                    <p className="text-slate-600">
-                                                      مصدر السعر:{" "}
-                                                      {
-                                                        supplier.exchangePriceType
-                                                      }
-                                                    </p>
-
-                                                    <p className="text-slate-600">
-                                                      تاريخ البورصة:{" "}
-                                                      {formatDate(
-                                                        supplier.exchangeDate,
-                                                      )}
                                                     </p>
 
                                                     <p className="text-slate-600">
@@ -2134,7 +2279,8 @@ function SellingPrices() {
                                                       جنيه
                                                     </p>
                                                   </div>
-                                                ))}
+                                                ),
+                                              )}
 
                                               {!reviewedDetails.costInfo && (
                                                 <p className="text-sm text-slate-400">
@@ -2146,12 +2292,11 @@ function SellingPrices() {
                                           </div>
                                         </div>
 
-                                        {/* Selling Prices */}
+                                        {/* All Category Prices */}
 
                                         <div className="mt-5">
                                           <h4 className="mb-3 font-extrabold text-slate-800">
-                                            أسعار البيع وهوامش الربح لجميع
-                                            الفئات
+                                            أسعار البيع لجميع الفئات لهذا المنتج
                                           </h4>
 
                                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
@@ -2184,9 +2329,7 @@ function SellingPrices() {
                                                       <p className="mt-3 text-lg font-extrabold text-green-700">
                                                         {category.sellingPrice !==
                                                         null
-                                                          ? `${formatPrice(
-                                                              category.sellingPrice,
-                                                            )} جنيه`
+                                                          ? `${formatPrice(category.sellingPrice)} جنيه`
                                                           : "التكلفة غير متاحة"}
                                                       </p>
 
@@ -2194,9 +2337,7 @@ function SellingPrices() {
                                                         الربح:{" "}
                                                         {category.profit !==
                                                         null
-                                                          ? `${money(
-                                                              category.profit,
-                                                            )} جنيه`
+                                                          ? `${money(category.profit)} جنيه`
                                                           : "-"}
                                                       </p>
                                                     </>
@@ -2224,7 +2365,8 @@ function SellingPrices() {
                                 colSpan={7}
                                 className="p-10 text-center text-slate-400"
                               >
-                                لا توجد فترات محفوظة تطابق الفئة والفترة المحددة.
+                                لا توجد فترات محفوظة تبدأ من التاريخ المحدد
+                                وتطابق الفئة المختارة.
                               </td>
                             </tr>
                           )}
@@ -2240,8 +2382,8 @@ function SellingPrices() {
           {/* Footer */}
 
           <div className="mt-5 text-center text-xs text-slate-400">
-            هامش ربح الأصناف • {products.length} صنف • {CATEGORIES.length} فئات
-            • {margins.length} فترة محفوظة
+            هامش ربح الأصناف • {products.length} منتج فعلي • {CATEGORIES.length}{" "}
+            فئات • {margins.length} فترة محفوظة
           </div>
         </div>
       </main>

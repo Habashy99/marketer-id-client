@@ -13,11 +13,16 @@ import CardDesigner from "./pages/marketing/cardDesigner/cardDesigner.jsx";
 import CardManagement from "./pages/marketing/cardManagement/cardManagement.jsx";
 import TemporaryCoordinators from "./pages/marketing/temporaryCoordinator/temporaryCoordinator.jsx";
 import DashboardMarketingCoordinators from "./pages/marketing/dashboardMarketingCoordinators.jsx";
+import Tastings from "./pages/marketing/tastings/tastingsManagement.jsx";
+import Events from "./pages/marketing/events/events.jsx";
+import CompanySchedules from "./pages/marketing/companySchedules/CompanySchedules.jsx";
+import ShelfPlanogram from "./pages/marketing/shelfPlanogram/shelfPlanogram.jsx";
 
 // Security
 import SecurityHome from "./pages/security/securityHome.jsx";
 import SecurityManagement from "./pages/security/securityManagement.jsx";
 import DashboardSecurity from "./pages/security/DashboardSecurity.jsx";
+
 // Recruitment
 import RecuritmentHome from "./pages/recruitment/recuritmentHome.jsx";
 import RecuritmentManagement from "./pages/recruitment/recuritmentManagement.jsx";
@@ -44,18 +49,22 @@ function App() {
 
           {/* Marketing */}
           <Route path="/marketing" element={<MarketingHome />} />
+
           <Route
             path="/marketing/printer-log"
             element={<PrintLogManagment />}
           />
+
           <Route
             path="/marketing/temporary-coordinators"
             element={<TemporaryCoordinators />}
           />
+
           <Route
             path="/marketing/card-management"
             element={<CardManagement />}
           />
+
           <Route
             path="/marketing/dashboard-coordinators"
             element={<DashboardMarketingCoordinators />}
@@ -65,22 +74,32 @@ function App() {
             path="/marketing/coordinators"
             element={<CoordinatorsManagement />}
           />
+
           <Route path="/marketing/card-designer" element={<CardDesigner />} />
 
-{/* Security */}
-<Route path="/security" element={<SecurityHome />} />
+          <Route path="/marketing/events" element={<Events />} />
 
-<Route
-  path="/security/management"
-  element={<SecurityManagement />}
-/>
+          <Route
+            path="/marketing/company-schedules"
+            element={<CompanySchedules />}
+          />
+          <Route
+            path="/marketing/shelf-planogram"
+            element={<ShelfPlanogram />}
+          />
+          {/* Tastings */}
+          <Route path="/marketing/tastings" element={<Tastings />} />
 
-<Route
-  path="/security/dashboard"
-  element={<DashboardSecurity />}
-/>
+          {/* Security */}
+          <Route path="/security" element={<SecurityHome />} />
+
+          <Route path="/security/management" element={<SecurityManagement />} />
+
+          <Route path="/security/dashboard" element={<DashboardSecurity />} />
+
           {/* Recruitment */}
           <Route path="/appointments" element={<RecuritmentHome />} />
+
           <Route
             path="/marketing/recuritment"
             element={<RecuritmentManagement />}
@@ -88,16 +107,24 @@ function App() {
 
           {/* Pricing */}
           <Route path="/pricing" element={<PricingHome />} />
+
           <Route path="/pricing/dashboard" element={<PoultryDashboard />} />
+
           <Route path="/pricing/poultry" element={<ChickenManagement />} />
+
           <Route path="/pricing/eggs" element={<EggManagement />} />
+
           <Route path="/pricing/fish" element={<FishManagement />} />
+
           <Route path="/pricing/exchange" element={<DailyExchange />} />
+
           <Route path="/pricing/suppliers" element={<SupplierFactors />} />
+
           <Route
             path="/pricing/manufacturing"
             element={<ManufacturingCost />}
           />
+
           <Route path="/pricing/selling-prices" element={<SellingPrices />} />
         </Routes>
       </HashRouter>
