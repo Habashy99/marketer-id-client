@@ -356,7 +356,7 @@ function DailyExchange() {
   const handleBarcodeChange = (value) => {
     setForm((previous) => ({
       ...previous,
-      barcode: value.replace(/\s/g, ""),
+      barcode: value,
     }));
 
     setLookupProduct(null);
@@ -366,15 +366,11 @@ function DailyExchange() {
   };
 
   const searchProductByBarcode = async () => {
-    const barcode = form.barcode.trim();
+    const searchValue = form.barcode.trim();
 
-    if (!barcode) {
-      setError("من فضلك أدخل باركود المنتج.");
-      return;
-    }
-
-    if (!/^\d{1,20}$/.test(barcode)) {
-      setError("الباركود يجب أن يحتوي على أرقام فقط.");
+    if (!searchValue) {
+      setError("من فضلك أدخل باركود أو اسم المنتج.");
+      setSuccess("");
       return;
     }
 
@@ -386,11 +382,13 @@ function DailyExchange() {
 
     try {
       const response = await sendHttpReq(
-        `daily-exchange/product/${encodeURIComponent(barcode)}`,
+        `daily-exchange/product/${encodeURIComponent(searchValue)}`,
       );
 
       if (!response?.success || !response?.product) {
-        throw new Error("لم يتم العثور على المنتج.");
+        throw new Error(
+          response?.message || "لم يتم العثور على المنتج.",
+        );
       }
 
       const rawProduct = response.product;
@@ -410,10 +408,19 @@ function DailyExchange() {
         suppliers: normalizedSuppliers,
       });
 
-      const duplicate = productsForDate().some(
-        (item) =>
-          String(item.barcode) === String(product.barcode),
-      );
+      const duplicate = productsForDate().some((item) => {
+        const sameBarcode =
+          product.barcode &&
+          String(item.barcode || "").trim() ===
+            String(product.barcode).trim();
+
+        const sameItemean =
+          product.itemean &&
+          String(item.itemean || "").trim() ===
+            String(product.itemean).trim();
+
+        return sameBarcode || sameItemean;
+      });
 
       if (duplicate) {
         throw new Error(
@@ -492,7 +499,7 @@ function DailyExchange() {
     event.preventDefault();
 
     if (!lookupProduct) {
-      setError("ابحث عن المنتج بالباركود أولاً.");
+      setError("ابحث عن المنتج بالباركود أو الاسم أولاً.");
       return;
     }
 
@@ -611,6 +618,7 @@ function DailyExchange() {
         !value ||
         String(product.name || "").toLowerCase().includes(value) ||
         String(product.barcode || "").toLowerCase().includes(value) ||
+        String(product.itemean || "").toLowerCase().includes(value) ||
         supplierNames.includes(value)
       );
     });
@@ -993,7 +1001,7 @@ function DailyExchange() {
                   إضافة منتج للبورصة
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  ابحث بالباركود لجلب المنتج والموردين النشطين من قاعدة البيانات.
+                  ابحث بالباركود أو اسم المنتج أو رقم الصنف لجلب المنتج والموردين النشطين من قاعدة البيانات.
                 </p>
               </div>
             </div>
@@ -1003,12 +1011,11 @@ function DailyExchange() {
             <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-3">
               <div className="md:col-span-2">
                 <label className="mb-2 block text-sm font-bold text-slate-700">
-                  باركود المنتج
+                  باركود أو اسم المنتج
                 </label>
 
                 <input
                   type="text"
-                  inputMode="numeric"
                   value={form.barcode}
                   onChange={(event) =>
                     handleBarcodeChange(event.target.value)
@@ -1019,7 +1026,7 @@ function DailyExchange() {
                       searchProductByBarcode();
                     }
                   }}
-                  placeholder="امسح الباركود أو أدخله يدويًا"
+                  placeholder="امسح الباركود أو اكتب اسم المنتج..."
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-orange-400 focus:bg-white focus:ring-4 focus:ring-orange-100"
                 />
               </div>

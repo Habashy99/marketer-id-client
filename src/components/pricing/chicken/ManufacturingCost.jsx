@@ -2,10 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../../header.jsx";
 import { sendHttpReq } from "../../../lib/httpHandler";
-import {
-  DEMO_RAW_MATERIALS,
-  EMPTY_INGREDIENT,
-} from "./data/constantsManufacturingCost";
+import { EMPTY_INGREDIENT } from "./data/constantsManufacturingCost";
 
 import {
   getPoultryProducts,
@@ -21,6 +18,7 @@ import {
 /* -------------------------------------------------------------------------- */
 /* Base Products and Selling Categories                                       */
 /* -------------------------------------------------------------------------- */
+
 
 const SELLING_CATEGORIES = [
   "الإسكندرية",
@@ -77,7 +75,8 @@ const getQuantityKg = (quantity, unit) => {
   return 0;
 };
 
-const isPoultryMaterial = (material) => Boolean(material?.isPoultry === true);
+const isPoultryMaterial = (material) =>
+  Boolean(material?.isPoultry === true);
 
 const normalizeSupplierName = (value = "") =>
   String(value)
@@ -126,9 +125,7 @@ const toPoultryMaterial = (product = {}) => {
 
   const rawType = String(
     product.poultryType || product.poultry_type || product.type || "",
-  )
-    .trim()
-    .toLowerCase();
+  ).trim().toLowerCase();
 
   return {
     ...product,
@@ -296,89 +293,35 @@ const normalizeProductBarcode = (value) => String(value ?? "").trim();
 /* Selling Price Calculation                                                  */
 /* -------------------------------------------------------------------------- */
 
-const normalizeMarginIdentifier = (value) => {
-  const normalized = String(value ?? "").trim();
-
-  if (!normalized) return [];
-
-  const identifiers = [normalized];
-
-  if (normalized.startsWith("itemean:")) {
-    identifiers.push(normalized.slice("itemean:".length));
-  }
-
-  if (normalized.startsWith("barcode:")) {
-    identifiers.push(normalized.slice("barcode:".length));
-  }
-
-  return identifiers;
-};
-
-const getMarginProductIdentifiers = (item) => {
-  return [item?.productId, item?.barcode, item?.itemean, item?.id, item?.key]
-    .flatMap(normalizeMarginIdentifier)
-    .filter(Boolean);
-};
-
-const getBaseProductItemean = (ingredients = [], baseProductId = "") => {
-  const baseId = String(baseProductId ?? "").trim();
-
-  const baseIngredient =
-    ingredients.find((item) => item.isBaseProduct) ||
-    ingredients.find(
-      (item) =>
-        String(item.barcode ?? "").trim() === baseId ||
-        String(item.ingredientProductId ?? "").trim() === baseId,
-    );
-
-  return String(baseIngredient?.itemean ?? "").trim();
-};
-
 const getProductSellingPrices = ({
   costPerKg,
   baseProductId,
-  baseProductItemean,
   costDate,
   profitMargins,
 }) => {
   const roundedCostPerKg = Math.round(Number(costPerKg || 0));
-
-  const baseIdentifiers = new Set(
-    [
-      ...normalizeMarginIdentifier(baseProductId),
-      ...normalizeMarginIdentifier(baseProductItemean),
-    ].filter(Boolean),
-  );
+  const selectedBaseProductId = normalizeProductBarcode(baseProductId);
 
   return SELLING_CATEGORIES.map((category) => {
     if (
-      baseIdentifiers.size === 0 ||
+      !selectedBaseProductId ||
       !costDate ||
       !Number.isFinite(roundedCostPerKg) ||
       roundedCostPerKg <= 0 ||
       !Array.isArray(profitMargins)
     ) {
-      return {
-        category,
-        profitMargin: null,
-        sellingPrice: null,
-      };
+      return { category, profitMargin: null, sellingPrice: null };
     }
 
     const activeMargins = profitMargins
       .filter((item) => {
-        const marginIdentifiers = getMarginProductIdentifiers(item);
-
-        const sameProduct = marginIdentifiers.some((identifier) =>
-          baseIdentifiers.has(identifier),
+        const marginProductId = normalizeProductBarcode(
+          item.productId ?? item.barcode,
         );
-
+        const sameProduct = marginProductId === selectedBaseProductId;
         const sameCategory = item.category === category;
-
         const validStartDate = item.startDate && item.startDate <= costDate;
-
         const validEndDate = !item.endDate || item.endDate >= costDate;
-
         const validMargin =
           item.profitMargin !== null &&
           item.profitMargin !== undefined &&
@@ -396,17 +339,11 @@ const getProductSellingPrices = ({
       .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
 
     const activeMargin = activeMargins[0];
-
     if (!activeMargin) {
-      return {
-        category,
-        profitMargin: null,
-        sellingPrice: null,
-      };
+      return { category, profitMargin: null, sellingPrice: null };
     }
 
     const profitMargin = Number(activeMargin.profitMargin);
-
     const sellingPrice = Math.round(
       roundedCostPerKg * (1 + profitMargin / 100),
     );
@@ -656,10 +593,12 @@ function ManufacturingCost() {
   const [poultryCatalog, setPoultryCatalog] = useState(() =>
     getPoultryProducts(),
   );
+  const [searchedMaterials, setSearchedMaterials] = useState([]);
   const [isHydrated, setIsHydrated] = useState(false);
 
   const exchanges = sharedData.exchanges || [];
   const suppliers = sharedData.supplierFactors?.suppliers || [];
+
 
   const profitMargins = Array.isArray(sharedData.profitMargins)
     ? sharedData.profitMargins
@@ -760,48 +699,90 @@ function ManufacturingCost() {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  /* Catalog */
+  /* Database Catalog: SQL Server is the only source for ingredients. */
 
-  const rawMaterials = useMemo(() => {
-    const poultryMaterials = poultryCatalog
-      .map(toPoultryMaterial)
-      .filter((item) => item.id && item.name);
+  const rawMaterials = searchedMaterials;
 
-    const byBarcode = new Map();
-    const withoutBarcode = [];
-    [...DEMO_RAW_MATERIALS, ...poultryMaterials].forEach((item) => {
-      const barcode = normalizeProductBarcode(item.barcode);
-      if (!barcode) {
-        withoutBarcode.push(item);
-        return;
+  const normalizeMaterialSearch = (value) =>
+    String(value ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+      .replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+      .replace(/[أإآ]/g, "ا")
+      .replace(/ى/g, "ي")
+      .replace(/[ًٌٍَُِّْـ]/g, "")
+      .replace(/\s+/g, " ");
+
+  useEffect(() => {
+    const keyword = catalogSearch.trim() || detailCatalogSearch.trim();
+    let active = true;
+
+    if (!keyword) {
+      if (!ingredientDraft.catalogId && !detailDraft.catalogId) {
+        setSearchedMaterials([]);
       }
-      if (!byBarcode.has(barcode) || item.isPoultry)
-        byBarcode.set(barcode, item);
-    });
-    return [...byBarcode.values(), ...withoutBarcode];
-  }, [poultryCatalog]);
+      return () => {
+        active = false;
+      };
+    }
 
-  const filteredCatalog = useMemo(() => {
-    const keyword = catalogSearch.trim().toLowerCase();
+    const timeoutId = setTimeout(async () => {
+      try {
+        const result = await sendHttpReq(
+          `manufacturing-cost/search/${encodeURIComponent(keyword)}`,
+        );
+        if (!active) return;
+        if (result?.success === false) {
+          setSearchedMaterials([]);
+          return;
+        }
 
-    return rawMaterials.filter(
-      (item) =>
-        String(item.name || "")
-          .toLowerCase()
-          .includes(keyword) || String(item.barcode || "").includes(keyword),
-    );
-  }, [catalogSearch, rawMaterials]);
+        const rows = result?.products || result?.data?.products || result?.data || [];
+        const productsFromDatabase = (Array.isArray(rows) ? rows : [])
+          .map((product) => {
+            const barcode = String(product.barcode || "").trim();
+            const itemean = String(product.itemean || "").trim();
+            const name = String(product.name || product.product_name || "").trim();
+            const id = barcode || `${itemean}:${product.unit ?? ""}`;
+            if (!id || !name) return null;
+            return {
+              ...product,
+              id,
+              barcode,
+              itemean,
+              code: String(product.code || itemean || barcode),
+              name,
+              unit: String(product.unit_name || product.unitName || product.unit || "قطعة").trim(),
+              pricePerKg: null,
+              isPoultry: false,
+              suppliers: Array.isArray(product.suppliers) ? product.suppliers : [],
+              supplierIds: Array.isArray(product.supplierIds) ? product.supplierIds : [],
+            };
+          })
+          .filter(Boolean);
+        setSearchedMaterials(productsFromDatabase);
+      } catch (error) {
+        if (active) {
+          console.error("Ingredient database search failed:", error);
+          setSearchedMaterials([]);
+        }
+      }
+    }, 300);
 
-  const filteredDetailCatalog = useMemo(() => {
-    const keyword = detailCatalogSearch.trim().toLowerCase();
+    return () => {
+      active = false;
+      clearTimeout(timeoutId);
+    };
+  }, [
+    catalogSearch,
+    detailCatalogSearch,
+    ingredientDraft.catalogId,
+    detailDraft.catalogId,
+  ]);
 
-    return rawMaterials.filter(
-      (item) =>
-        String(item.name || "")
-          .toLowerCase()
-          .includes(keyword) || String(item.barcode || "").includes(keyword),
-    );
-  }, [detailCatalogSearch, rawMaterials]);
+  const filteredCatalog = rawMaterials;
+  const filteredDetailCatalog = rawMaterials;
 
   const selectedMaterial = useMemo(
     () =>
@@ -818,6 +799,7 @@ function ManufacturingCost() {
       ),
     [detailDraft.catalogId, rawMaterials],
   );
+
 
   /* Supplier Helpers */
 
@@ -951,10 +933,7 @@ function ManufacturingCost() {
         allSuppliers
           .map((supplier) => {
             const id = String(
-              supplier?.id ??
-                supplier?.supplierId ??
-                supplier?.supplier_id ??
-                "",
+              supplier?.id ?? supplier?.supplierId ?? supplier?.supplier_id ?? "",
             ).trim();
             return [id, supplier];
           })
@@ -1098,35 +1077,105 @@ function ManufacturingCost() {
             اختر الخامة
           </label>
 
-          <input
-            value={catalogKeyword}
-            onChange={(event) => setCatalogKeyword(event.target.value)}
-            placeholder="ابحث باسم الخامة أو الباركود..."
-            className={inputClass}
-          />
+          <div className="relative">
+            <div className="relative">
+              <input
+                type="search"
+                value={catalogKeyword}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setCatalogKeyword(value);
+                  if (draft.catalogId) {
+                    setDraft((previous) => ({ ...previous, catalogId: "" }));
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setCatalogKeyword("");
+                  if (event.key === "Enter" && catalog.length === 1) {
+                    event.preventDefault();
+                    const selected = catalog[0];
+                    setDraft({
+                      ...EMPTY_INGREDIENT,
+                      ...getDraftForMaterial(selected),
+                      catalogId: String(selected.id),
+                    });
+                    setCatalogKeyword("");
+                  }
+                }}
+                placeholder="ابحث باسم الخامة أو الباركود..."
+                className={`${inputClass} pr-11`}
+                autoComplete="off"
+              />
+              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
+                🔎
+              </span>
+            </div>
 
-          <select
-            value={draft.catalogId || ""}
-            onChange={(event) => {
-              const selected = rawMaterials.find(
-                (item) => String(item.id) === event.target.value,
-              );
+            {catalogKeyword.trim() && (
+              <div className="mt-2 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                {catalog.length ? (
+                  catalog.slice(0, 50).map((item) => {
+                    const isSelected = String(draft.catalogId) === String(item.id);
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setDraft({
+                            ...EMPTY_INGREDIENT,
+                            ...getDraftForMaterial(item),
+                            catalogId: String(item.id),
+                          });
+                          setCatalogKeyword("");
+                        }}
+                        className={`flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-right text-sm last:border-b-0 hover:bg-orange-50 ${
+                          isSelected ? "bg-orange-50 text-orange-800" : "text-slate-700"
+                        }`}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate font-bold">{item.name}</span>
+                          <span className="mt-1 block text-xs text-slate-500">
+                            الباركود: {item.barcode || item.itemean || item.code || "غير متاح"}
+                          </span>
+                        </span>
+                        {isSelected && <span className="shrink-0 text-orange-600">✓</span>}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <p className="px-4 py-5 text-center text-sm text-slate-500">
+                    لا توجد خامات مطابقة للاسم أو الباركود.
+                  </p>
+                )}
+                {catalog.length > 50 && (
+                  <p className="bg-slate-50 px-4 py-2 text-center text-xs text-slate-500">
+                    اكتب مزيدًا من الحروف لتضييق نتائج البحث.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
 
-              setDraft({
-                ...EMPTY_INGREDIENT,
-                ...getDraftForMaterial(selected),
-              });
-            }}
-            className={`${inputClass} mt-2`}
-          >
-            <option value="">اختر الخامة</option>
-
-            {catalog.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name} {item.barcode ? `- ${item.barcode}` : ""}
-              </option>
-            ))}
-          </select>
+          {material && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <div>
+                <p className="text-sm font-bold text-emerald-900">{material.name}</p>
+                <p className="mt-1 text-xs text-emerald-700">
+                  الباركود: {material.barcode || material.itemean || material.code || "غير متاح"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraft((previous) => ({ ...previous, catalogId: "" }));
+                  setCatalogKeyword("");
+                }}
+                className="rounded-lg px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+              >
+                تغيير الخامة
+              </button>
+            </div>
+          )}
         </div>
 
         {material && (
@@ -1789,18 +1838,16 @@ function ManufacturingCost() {
     (item) => item.id === selectedProductId,
   );
 
-  const selectedProductSellingPrices = selectedProduct
-    ? getProductSellingPrices({
-        costPerKg: selectedProduct.costPerKg,
-        baseProductId: selectedProduct.baseProductId,
-        baseProductItemean: getBaseProductItemean(
-          selectedProduct.ingredients || [],
-          selectedProduct.baseProductId,
-        ),
-        costDate: selectedProduct.costDate,
-        profitMargins,
-      })
-    : [];
+  const selectedProductSellingPrices = useMemo(() => {
+    if (!selectedProduct) return [];
+
+    return getProductSellingPrices({
+      costPerKg: selectedProduct.costPerKg,
+      baseProductId: selectedProduct.baseProductId,
+      costDate: selectedProduct.costDate,
+      profitMargins,
+    });
+  }, [selectedProduct, profitMargins]);
 
   /* Main Form: Add Ingredient */
 
@@ -1835,10 +1882,7 @@ function ManufacturingCost() {
       }
 
       const barcode = normalizeProductBarcode(
-        apiProduct.barcode ||
-          apiProduct.itemean ||
-          apiProduct.id ||
-          searchValue,
+        apiProduct.barcode || apiProduct.itemean || apiProduct.id || searchValue,
       );
       const name = String(
         apiProduct.name ||
@@ -1860,16 +1904,12 @@ function ManufacturingCost() {
         const catalogId = String(item?.id ?? "").trim();
         const catalogItean = String(item?.itemean ?? "").trim();
         const catalogCode = String(item?.code ?? "").trim();
-        const catalogName = normalizeSupplierName(
-          item?.name || item?.a_name || "",
-        );
+        const catalogName = normalizeSupplierName(item?.name || item?.a_name || "");
         const targetName = normalizeSupplierName(name);
 
         return (
-          (barcode &&
-            [catalogBarcode, catalogId, catalogCode].includes(barcode)) ||
-          (itemean &&
-            [catalogItean, catalogId, catalogCode].includes(itemean)) ||
+          (barcode && [catalogBarcode, catalogId, catalogCode].includes(barcode)) ||
+          (itemean && [catalogItean, catalogId, catalogCode].includes(itemean)) ||
           (targetName && catalogName && targetName === catalogName)
         );
       });
@@ -1881,33 +1921,22 @@ function ManufacturingCost() {
           apiProduct.productType ||
           apiProduct.product_type ||
           "",
-      )
-        .trim()
-        .toLowerCase();
+      ).trim().toLowerCase();
       const poultryName = normalizeSupplierName(name);
-      const hasPoultryName = /دجاج|دواجن|فراخ|كبد وقوانص|قوانص/.test(
-        poultryName,
-      );
+      const hasPoultryName =
+        /دجاج|دواجن|فراخ|كبد وقوانص|قوانص/.test(poultryName);
       const truthyPoultryFlag = [
         apiProduct.isPoultry,
         apiProduct.is_poultry,
         apiProduct.isPoultryProduct,
-      ].some(
-        (value) =>
-          value === true || value === 1 || value === "1" || value === "true",
-      );
+      ].some((value) => value === true || value === 1 || value === "1" || value === "true");
       const isPoultry =
         Boolean(catalogPoultryProduct) ||
         truthyPoultryFlag ||
         hasPoultryName ||
-        [
-          "white",
-          "baladi",
-          "balady",
-          "دواجن",
-          "دواجن بيضاء",
-          "دواجن بلدي",
-        ].includes(rawType);
+        ["white", "baladi", "balady", "دواجن", "دواجن بيضاء", "دواجن بلدي"].includes(
+          rawType,
+        );
 
       const selectedProduct = {
         ...(catalogPoultryProduct || {}),
@@ -2145,9 +2174,7 @@ function ManufacturingCost() {
     setBaseProductId(savedBaseBarcode);
     setBaseProductName(savedBaseName);
     setBaseProductSearch(
-      savedBaseName
-        ? `${savedBaseName} - ${savedBaseBarcode}`
-        : savedBaseBarcode,
+      savedBaseName ? `${savedBaseName} - ${savedBaseBarcode}` : savedBaseBarcode,
     );
 
     setIngredients((product.ingredients || []).map((item) => ({ ...item })));
@@ -2513,9 +2540,7 @@ function ManufacturingCost() {
                         step="0.001"
                         inputMode="decimal"
                         value={baseProductQuantity}
-                        onChange={(event) =>
-                          setBaseProductQuantity(event.target.value)
-                        }
+                        onChange={(event) => setBaseProductQuantity(event.target.value)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter") {
                             event.preventDefault();
@@ -2924,9 +2949,7 @@ function ManufacturingCost() {
                         </td>
 
                         <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
-                          {item.baseProductName ||
-                            item.baseProductId ||
-                            "غير محدد"}
+                          {item.baseProductName || item.baseProductId || "غير محدد"}
                         </td>
 
                         <td className="border-b border-slate-100 px-4 py-4 text-sm text-slate-600">
